@@ -9,6 +9,8 @@
   "author": "Ben Wirth",
   "license": "ISC",
   "dependencies": {
-    "express": "^4.17.3"
+    "chess.js": "^0.12.1",
+    "express": "^4.17.3",
+    "jquery": "^3.6.0"
   }
 }
