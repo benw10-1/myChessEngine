@@ -11,7 +11,7 @@ This is a chess full chess application, it includes a chess board with promotion
 | DEPLOYMENT     | URL              |
 | -------------- | ---------------- |
 | Repository     | [GitHub Repo](https://github.com/benw10-1/myChessEngine) |
-| Published Page | [Bug Tracker](https://benw10-1.github.io/myChessEngine/) |
+| Published Page | [MyEngine](https://benw10-1.github.io/myChessEngine/) |
 
 ## License
 
