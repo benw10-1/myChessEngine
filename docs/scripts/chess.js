@@ -400,7 +400,7 @@ class Chessboard {
         headcont.className = "headcont"
 
         let mrroboto = new Image(75, 75)
-        mrroboto.src = "/images/mrroboto.png"
+        mrroboto.src = "images/mrroboto.png"
         headcont.appendChild(mrroboto)
 
         let title = document.createElement("div")
