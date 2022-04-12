@@ -124,150 +124,55 @@ const keys = {
         r: 11,
         q: 12,
         k: 13
-    }
+    },
+    pawn_promos: [
+        "q",
+        "n",
+        "r",
+        "b"
+    ]
 }
 
 async function delay(ms) {
     return new Promise(res => {setTimeout(res, ms)})
 }
- 
-class Engine {
-    #moveSeed
-    #levelSeeds
-    constructor(game, color=BLACK, zob=undefined, transposition=undefined) {
-        this.game = game
-        this.color = color
-        this.zob = zob ?? this.initZob()
-        this.transposition = transposition ?? {}
-        this.evaluated = 0
+
+class EngineWorker {
+    #last
+    constructor(fen, color=BLACK) {
+        this.worker = new Worker("scripts/engineworker.js")
+        this.worker.onmessage = (msg) => {
+            this.#last = msg.data
+        }
+
+        this.loadOpenings().then(openings => {
+            this.command("init", { fen, color, openings })
+        })
     }
     async loadOpenings() {
         const link = "openings/processed.json"
         return fetch(link).then(data => data.json())
     }
-    async getOpenings() {
-        if (!this.openings) this.openings = await this.loadOpenings()
-        let hist = this.game.history()
-        let last
-        for (const move of hist) {
-            if (!last) {
-                last = this.openings[move]
-                continue
-            }
-            if (last[move]) last = last[move]
-            else return
-        }
-        if (!last || last.length < 1) return
-        let ks = Object.keys(last)
-        return ks
+    command(cmd, data={}) {
+        this.worker.postMessage({ cmd, data })
     }
-    initZob() {
-        let table = []
-        for (let i=0; i < 64; i++) {
-            let seed = []
-            for (const key in keys.hash_indices) {
-                seed[keys.hash_indices[key]] = Math.random() * 2**64
-            }
-            table.push(seed)
-        }
-        this.#moveSeed = Math.random() * (2**64 - 1)
-        this.#levelSeeds = []
-        return table
-    }
-    hash(level) {
-        if (!this.zob) return 0
-        let h = 0
-        if (this.game.turn() === BLACK) h ^= this.#moveSeed
-        if (!this.#levelSeeds[level]) this.#levelSeeds[level] = Math.random() * (2**64 - 1)
-        h ^= this.#levelSeeds[level]
-        let b = this.game.board()
-        for (let i=0; i < 64; i++) {
-            let item = b[Math.floor(i/8)][i % 8]
-            if (!item) continue
-            let hash_index = keys.hash_indices[item.color === BLACK ? item.type.toUpperCase() : item.type]
-            h ^= this.zob[i][hash_index]
-        }
-        return h
-    }
-    eval() {
-        this.evaluated += 1
-        let squares = this.game.board()
-        let total = 0, i = 0
-        for (const row of squares) {
-            for (const item of row) {
-                if (!item) {
-                    i++
-                    continue
-                }
-                total += keys[item.color + item.type + "pref"][i]
-                total += keys.indices[item.color + item.type]
-                i++
-            }
-        }
-        return total
-    }
-    async search() {
-        return new Promise(async (res) => {
-            let opening = await this.getOpenings()
-            this.evaluated = 0
-            let best, maxPly = 6
-            let moves = opening ?? [...this.game.moves()]
-            for (let ply=0; ply < maxPly; ply++) {
-                await delay(50)
-                let alpha = -Infinity, beta = Infinity, val = -Infinity
-                for (const x of moves) {
-                    this.game.move(x)
-                    let result = this.alphabeta(alpha, beta, ply, false, 0)
-                    this.game.undo()
-                    
-                    if (result >= val) {
-                        val = result
-                        best = x
-                    }
-                }
-            }
-            console.log(best, this.evaluated)
-            this.transposition = {}
-            res(best)
-        })
-    }
-    alphabeta(alpha, beta, depth, player, level) {
-        if (depth === 0) return this.eval() * (this.color === BLACK ? -1 : 1)
-        let h = this.hash(level), val, moves = this.game.moves()
-        if (this.transposition[h]) return this.transposition[h]
-        if (player) {
-            val = -Infinity
-            for (const x of moves) {
-                this.game.move(x)
-                val = Math.max(this.alphabeta(alpha, beta, depth - 1, false, level + 1), val)
-                this.game.undo()
-                if (val >= beta) break
-                alpha = Math.max(alpha, val)
-            }
-        }
-        else {
-            val = Infinity
-            for (const x of moves) {
-                this.game.move(x)
-                val = Math.min(this.alphabeta(alpha, beta, depth - 1, true, level + 1), val)
-                this.game.undo()
-                if (val <= alpha) break
-                beta = Math.min(beta, val)
-            }
-        }
-        this.transposition[h] = val
-        return val
+    popLast() {
+        let last = this.#last
+        this.#last = undefined
+        return last
     }
 }
 
 class Piece {
-    constructor(piece, square) {
-        let img = new Image(50, 50)
-        img.src = "images/" + piece + ".png"
+    constructor(piece, square, dim=[50, 50]) {
         this.name = piece
-        this.image = img
         this.square = square
-
+        this.initImage(dim)
+    }
+    initImage(dim=[50, 50]) {
+        if (this.image) this.image.remove()
+        let img = new Image(dim[0], dim[1])
+        img.src = "images/" + this.name + ".png"
         const getCenter = function(i) {
             let rect = i.getBoundingClientRect()
             return [rect.left + rect.width * .5, rect.top + rect.height * .5]
@@ -280,22 +185,22 @@ class Piece {
         }
 
         const clamp = (x, y) => {
-            let r = square.board.container.getBoundingClientRect()
+            let r = this.square.board.container.getBoundingClientRect()
             return [Math.max(r.left, Math.min(r.left + r.width, x)), Math.max(r.top, Math.min(r.top + r.height, y))]
         }
         const clickhndl = event => {
             clearSelec()
-            if (this.square.board.game.turn() !== this.square.board.user) return
-            for (let x of this.square.board.game.moves({square: this.square.fen})) {
-                x = x.slice(x.length - 2, x.length)
-                let sq = this.square.board.getSquareFEN(x)
-                if (sq) sq.overlayState(true)
+            if (this.square.board.game.turn() !== this.square.board.user || !this.square.board.playing) return
+            for (const x of this.square.board.game.moves({square: this.square.fen, verbose: true})) {
+                const sq = this.square.board.getSquareFEN(x.to)
+                if (sq) {
+                    sq.overlayState(true, false)
+                    sq.setMove(x)
+                }
             }
         }
-        img.onload = square.container.appendChild(img)
         img.addEventListener("dragstart", event => {
             event.preventDefault()
-            if (this.square.board.game.turn() !== this.square.board.user) return
             img.style.cursor = "grabbing"
             img.classList.add("over")
             clickhndl()
@@ -309,13 +214,17 @@ class Piece {
                 event.preventDefault()
                 img.style = ""
                 img.classList.remove("over")
-                let sq = square.board.getSquareXY(event.clientX, event.clientY)
-                if (sq) {
-                    let fn = {
-                        from: this.square.fen,
-                        to: sq.fen
+                let sq = this.square.board.getSquareXY(event.clientX, event.clientY)
+                if (sq && this.square.board.game.turn() === this.square.board.user && this.square.board.playing) {
+                    if (sq.move && sq.move.flags.indexOf("p") > -1) {
+                        sq.getPromotion(sq.move.color).then(data => {
+                            if (data) {
+                                sq.move.promotion = data
+                                this.square.board.move(sq.move)
+                            }
+                        })
                     }
-                    this.square.board.move(fn)
+                    else this.square.board.move(sq.move)
                 }
                 document.removeEventListener("mousemove", movehndl)
                 document.removeEventListener("pointerup", pointhndl)
@@ -324,6 +233,9 @@ class Piece {
             document.addEventListener("pointerup", pointhndl)
         })
         img.addEventListener("click", clickhndl)
+
+        this.image = img
+        this.square.container.appendChild(img)
     }
 }
 
@@ -336,34 +248,110 @@ class Square {
         this.fen = keys.letters[x] + keys.nums[y]
         this.overlay = document.createElement("div")
         this.overlay.className = "square-over hidden"
+
+        this.overlay.onclick = () => {
+            if (!this.move) return
+            if (this.move.flags.indexOf("p") > -1) {
+                this.getPromotion(this.move.color).then(data => {
+                    if (data) {
+                        this.move.promotion = data
+                        this.board.move(this.move)
+                    }
+                    console.log(data)
+                })
+                return
+            }
+            this.board.move(this.move)
+            this.move = undefined
+        }
+
         this.container.appendChild(this.overlay)
 
-        if (piece) this.piece = new Piece(piece, this)
+        if (piece) {
+            setTimeout(_ => {
+                this.piece = new Piece(piece, this)
+            }, 300)
+        }
     }
-    overlayState(state) {
-        state ? this.overlay.classList.remove("hidden") : this.overlay.classList.add("hidden")
+    getPromotion(color) {
+        return new Promise((res) => {
+            this.board.playing = false
+            let promotionEl = document.createElement("div")
+            promotionEl.className = "promotion-over"
+            let first = true
+            const deleter = (event) => {
+                if (first) {
+                    first = false
+                    return
+                }
+                promotionEl.remove()
+                window.removeEventListener("click", deleter)
+                this.board.playing = true
+                res()
+            }
+            for (const x of keys.pawn_promos) {
+                let container = document.createElement("div")
+                container.className = "promotion-item"
+
+                let img = new Image(50, 50)
+                img.src = "images/" + color + x + ".png"
+                img.onclick = () => {
+                    promotionEl.remove()
+                    window.removeEventListener("click", deleter)
+                    this.board.playing = true
+                    res(x)
+                }
+
+                container.appendChild(img)
+                promotionEl.appendChild(container)
+            }
+            let ex = document.createElement("div")
+            ex.className = "x"
+            ex.innerHTML = "×"
+            ex.onclick = deleter
+            promotionEl.appendChild(ex)
+            this.container.appendChild(promotionEl)
+            window.addEventListener("click", deleter)
+        })
+    }
+    overlayState(state, lastMove) {
+        if (!state) {
+            this.overlay.classList.add("hidden") 
+            this.overlay.classList.remove("lastMove")
+        }
+        else {
+            this.overlay.classList.remove("hidden")
+            if (lastMove) this.overlay.classList.add("lastMove")
+        }
     }
     setPiece(piece) {
         if (this.piece) this.piece.image.remove()
-        this.piece = piece
+        
+        this.piece = piece ?? null
         if (!piece) return
         if (piece.square) piece.square.setPiece()
         piece.square = this
         if (piece.image) this.container.appendChild(piece.image)
     }
+    setMove(mv) {
+        this.move = mv
+    }
 }
 
 class Chessboard {
-    constructor(target, game, opt) {
+    constructor(target, opt) {
         this.opt = opt
         this.target = target
-        this.game = game ?? new Chess()
+        opt = opt ?? {}
+        this.game = new Chess(opt.fen)
         this.container = document.createElement("div")
         this.container.classList = "board-cont"
-        this.squares = []
-        this.engine = new Engine(this.game)
-        this.user = WHITE
 
+        this.squares = []
+        this.lastMove = [null, null]
+        this.user = WHITE
+        this.engineWorker = new EngineWorker(opt.fen, this.user === WHITE ? BLACK : WHITE)
+        this.playing = true
         let b = this.game.board()
 
         for (let y=0; y < 8; y++) {
@@ -384,6 +372,24 @@ class Chessboard {
                 el.classList.add("hidden")
             }
         })
+
+        let [xaxis, yaxis]= [document.createElement("div"), document.createElement("div")]
+        xaxis.className = "xaxis"
+        yaxis.className = "yaxis"
+        keys.letters.forEach(e => {
+            let box = document.createElement("div")
+            box.className = "label"
+            box.innerHTML = e
+            xaxis.appendChild(box)
+        })
+        keys.nums.forEach(e => {
+            let box = document.createElement("div")
+            box.className = "label"
+            box.innerHTML = e
+            yaxis.appendChild(box)
+        })
+        this.container.appendChild(xaxis)
+        this.container.appendChild(yaxis)
         this.target.appendChild(this.container)
     }
     getSquare(x, y) {
@@ -405,20 +411,55 @@ class Chessboard {
             el.classList.add("hidden")
         }
         let move = this.game.move(mv)
-
+        if (this.game.game_over()) {
+            this.playing = false
+            this.endgame(this.game.turn() === BLACK ? "White" : "Black")
+        }
         if (move) {
+            for (const item of this.lastMove) {
+                if (item) item.overlayState(false)
+            }
             let from = this.getSquareFEN(move.from)
             let to = this.getSquareFEN(move.to)
+            from.overlayState(true, true)
+            to.overlayState(true, true)
+
+            this.lastMove = [from, to]
             to.setPiece(from.piece)
-            console.log(move)
+            if (move.flags.indexOf("p") > -1) {
+                to.piece.name = move.color + move.promotion
+                to.piece.initImage()
+            }
+            if (move.flags.indexOf("e") > -1) {
+                let [toi, fromi] = [keys.letters.indexOf(move.to[0]), keys.nums.indexOf(parseInt(move.from[1]))]
+                this.getSquareFEN(keys.letters[toi] + keys.nums[fromi]).setPiece()
+            }
+            if (move.flags.indexOf("k") > -1) {
+                let index = keys.letters.indexOf(move.to[0])
+                let rookfrom = this.getSquareFEN(keys.letters[index + 1] + move.to[1])
+                let rookto = this.getSquareFEN(keys.letters[index - 1] + move.to[1])
+                rookto.setPiece(rookfrom.piece)
+            }
+            if (move.flags.indexOf("q") > -1) {
+                let index = keys.letters.indexOf(move.to[0])
+                let rookfrom = this.getSquareFEN(keys.letters[index - 2] + move.to[1])
+                let rookto = this.getSquareFEN(keys.letters[index + 1] + move.to[1])
+                rookto.setPiece(rookfrom.piece)
+            }
         }
         if (this.game.turn() !== this.user && move) {
-            const startTime = Date.now()
-            this.engine.search().then(move => {
-                console.log((Date.now() - startTime) / 1000)
-                this.move(move)
-            })
+            this.engineWorker.command("move", move)
+            let inter = setInterval(_ => {
+                let last = this.engineWorker.popLast()
+                if (last) {
+                    this.move(last)
+                    clearInterval(inter)
+                }
+            }, 200)
         }
         return move
+    }
+    endgame(winner) {
+        console.log("gg, winner is: " + winner)
     }
 }

@@ -1,16 +1,16 @@
 {
   "name": "basic_express",
   "version": "1.0.0",
-  "description": "Simple chat application built using Express",
+  "description": "Simple application built using Express",
   "main": "server.js",
   "scripts": {
-    "test": "test"
+    "test": "test",
+    "start": "node server"
   },
   "author": "Ben Wirth",
   "license": "ISC",
   "dependencies": {
     "chess.js": "^0.12.1",
-    "express": "^4.17.3",
-    "jquery": "^3.6.0"
+    "express": "^4.17.3"
   }
 }
