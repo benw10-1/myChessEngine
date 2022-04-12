@@ -144,13 +144,14 @@ function shuffleArray(array) {
 class Engine {
     #moveSeed
     #levelSeeds
-    constructor(game, color=BLACK, openings=[], zob=undefined, transposition=undefined) {
+    constructor(game, color=BLACK, openings=[], sendMsg, zob=undefined, transposition=undefined) {
         this.game = game
         this.color = color
         this.zob = zob ?? this.initZob()
         this.transposition = transposition ?? {}
         this.evaluated = 0
         this.openings = openings
+        this.sendMsg = sendMsg
     }
     getOpenings() {
         if (!this.openings) this.openings = []
@@ -235,32 +236,34 @@ class Engine {
                     return move
                 })
             }
-            let moves =  [...this.game.moves({verbose: true})]
+            let moves = opening ?? [...this.game.moves({verbose: true})]
             moves = moves
             moves.sort((v1, v2) => {
                 if (v1.flags.indexOf("c") > -1) return -1
                 return 1
             })
             for (let ply=0; ply < maxPly; ply++) {
-                let alpha = -Infinity, beta = Infinity, picked, best = -Infinity
+                let best = -Infinity, picked
                 for (const x of moves) {
                     this.game.move(x)
-                    let result = -this.alphabeta(-beta, -alpha, ply, 0)
+                    let result = this.alphabeta(-Infinity, Infinity, ply, 0) * (this.color === BLACK ? -1 : 1)
                     this.game.undo()
-                    if (result > best) {
+                    if (result >= best) {
                         best = result
                         picked = x
                     }
                 }
                 bestplys.push(picked)
+                globalThis.postMessage(["info", this.evaluated + " positions evaluated."])
             }
+            await delay(100)
             this.transposition = {}
-            console.log(this.evaluated, (Date.now() - start) / 1000, bestplys)
+            globalThis.postMessage(["info", this.evaluated + " positions evaluated in " + ((Date.now() - start) / 1000).toFixed(2) + " seconds."])
             res(bestplys[bestplys.length - 1])
         })
     }
     alphabeta(alpha, beta, depth, level) {
-        if (depth === 0) return this.qSearch(alpha, beta, 6)
+        if (depth === 0) return this.qSearch(alpha, beta, Math.max(4, 50 - (level * 15)))
         let val
         let h = this.hash(level)
         if (this.transposition[h]) {
@@ -269,26 +272,39 @@ class Engine {
             if (val > alpha) alpha = val
         }
         let moves = this.game.moves({verbose: true})
+        // look at captures first
         moves.sort((v1, v2) => {
             if (v1.flags.indexOf("c") > -1) return -1
             return 1
         })
+        // best = alpha to check if it there is a fail-low (no best move found)
+        let best = alpha, a = alpha
         for (const x of moves) {
             this.game.move(x)
-            val = -this.alphabeta(-beta, -alpha, depth - 1, level + 1)
+            // negate alpha, beta, and result while switching alpha and beta arguments to emulate the opposing player also making an "alphabeta" search
+            val = -this.alphabeta(-beta, -a, depth - 1, level + 1)
             this.game.undo()
-            if (val >= beta) return beta
-            if (val > alpha) alpha = val
+            // refutation node (previosly found maximum assured score for the opposing player is smaller than searched value)
+            if (val >= beta) {
+                this.transposition[h] = beta
+                return beta
+            }
+            // if our searched value is greater than our current iterations maximum assured value then store it
+            if (val > a) {
+                best = val
+                a = val
+            }
         }
-
-        this.transposition[h] = alpha
-        return alpha
+        // if no best move is found, dont store in transposition
+        if (alpha === best) return alpha
+        // otherwise store our best move at depth {level} in the table
+        this.transposition[h] = best
+        return best
     }
     qSearch(alpha, beta, depth) {
-        // return this.eval()
         if (depth === 0 && this.game.in_check()) return 0
         var best = this.eval()
-        if (best >= beta) return best
+        if (best >= beta) return beta
         if (best > alpha) alpha = best
         let moves = this.game.moves()
         for (const move of moves) {
@@ -303,7 +319,7 @@ class Engine {
             if (evalpl >= beta) return beta
             if (evalpl > alpha) alpha = evalpl
         }
-        return alpha
+        return alpha === best ? -alpha : alpha
     }
 }
 self.importScripts("chess-js.js")
@@ -322,7 +338,7 @@ onmessage = function(e) {
             engine.game.move(data)
             engine.search().then(result => {
                 engine.game.move(result)
-                this.postMessage(result)
+                this.postMessage(["move", result])
             })
             break
         default:

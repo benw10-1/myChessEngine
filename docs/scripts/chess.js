@@ -138,11 +138,11 @@ async function delay(ms) {
 }
 
 class EngineWorker {
-    #last
     constructor(fen, color=BLACK) {
         this.worker = new Worker("scripts/engineworker.js")
+        this.q = []
         this.worker.onmessage = (msg) => {
-            this.#last = msg.data
+            this.q.push(msg.data)
         }
 
         this.loadOpenings().then(openings => {
@@ -156,10 +156,8 @@ class EngineWorker {
     command(cmd, data={}) {
         this.worker.postMessage({ cmd, data })
     }
-    popLast() {
-        let last = this.#last
-        this.#last = undefined
-        return last
+    pop() {
+        return this.q.pop()
     }
 }
 
@@ -394,11 +392,39 @@ class Chessboard {
         })
         this.container.appendChild(xaxis)
         this.container.appendChild(yaxis)
+
+        let topbar = document.createElement("div")
+        topbar.className = "topbar"
+        
+        let headcont = document.createElement("div")
+        headcont.className = "headcont"
+
+        let mrroboto = new Image(75, 75)
+        mrroboto.src = "/images/mrroboto.png"
+        headcont.appendChild(mrroboto)
+
+        let title = document.createElement("div")
+        title.className = "title"
+        title.innerHTML = "Mr. Roboto"
+        headcont.appendChild(title)
+        topbar.appendChild(headcont)
+
+        let outcont = document.createElement("div")
+        outcont.className = "outcont"
+        this.output = document.createElement("div")
+        this.output.className = "output"
+        outcont.appendChild(this.output)
+        topbar.appendChild(outcont)
+
+        this.container.appendChild(topbar)
         this.target.appendChild(this.container)
     }
     getSquare(x, y) {
         if (x > 7 || y > 7 || y < 0 || x < 0) return
         return this.squares[y][x]
+    }
+    setOutput(output) {
+        this.output.innerHTML = output
     }
     getSquareFEN(str) {
         if (!str || str.length !== 2) return
@@ -454,12 +480,16 @@ class Chessboard {
         if (this.game.turn() !== this.user && move) {
             this.engineWorker.command("move", move)
             let inter = setInterval(_ => {
-                let last = this.engineWorker.popLast()
-                if (last) {
-                    this.move(last)
-                    clearInterval(inter)
+                while (this.engineWorker.q.length > 0) {
+                    let last = this.engineWorker.pop()
+                    console.log(last)
+                    if (last && last[0] === "move") {
+                        this.move(last[1])
+                        clearInterval(inter)
+                    }
+                    if (last && last[0] === "info") this.setOutput(last[1])
                 }
-            }, 200)
+            }, 100)
         }
         return move
     }
