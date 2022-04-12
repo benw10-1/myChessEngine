@@ -179,8 +179,12 @@ class Piece {
         }
 
         const clearSelec = _ => {
-            for (const el of this.square.board.container.querySelectorAll(".square-over")) {
-                el.classList.add("hidden")
+            let board = this.square.board.squares
+            for (let y = 0; y < board.length; y++) {
+                for (let x = 0; x < board[y].length; x++) {
+                    board[y][x].overlayState(false, true)
+                    board[y][x].move = undefined
+                }
             }
         }
 
@@ -317,7 +321,7 @@ class Square {
     overlayState(state, lastMove) {
         if (!state) {
             this.overlay.classList.add("hidden") 
-            this.overlay.classList.remove("lastMove")
+            if (!lastMove) this.overlay.classList.remove("lastMove")
         }
         else {
             this.overlay.classList.remove("hidden")
@@ -326,7 +330,7 @@ class Square {
     }
     setPiece(piece) {
         if (this.piece) this.piece.image.remove()
-        
+
         this.piece = piece ?? null
         if (!piece) return
         if (piece.square) piece.square.setPiece()

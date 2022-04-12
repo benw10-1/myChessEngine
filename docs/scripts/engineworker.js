@@ -235,7 +235,7 @@ class Engine {
                     return move
                 })
             }
-            let moves = opening ?? [...this.game.moves({verbose: true})]
+            let moves =  [...this.game.moves({verbose: true})]
             moves = moves
             moves.sort((v1, v2) => {
                 if (v1.flags.indexOf("c") > -1) return -1
@@ -293,7 +293,7 @@ class Engine {
         let moves = this.game.moves()
         for (const move of moves) {
             let mv = this.game.move(move)
-            if (!this.game.in_check() || !mv.flags.indexOf("c") > -1) {
+            if (!this.game.in_check() || mv.flags.indexOf("c") < 0) {
                 this.game.undo()
                 continue
             }
