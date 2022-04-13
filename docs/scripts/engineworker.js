@@ -152,6 +152,7 @@ class Engine {
         this.evaluated = 0
         this.openings = openings
         this.sendMsg = sendMsg
+        this.history = {}
     }
     getOpenings() {
         if (!this.openings) this.openings = []
@@ -219,12 +220,17 @@ class Engine {
         }
         return total * ((this.game.turn() === BLACK) ? -1 : 1)
     }
+    timeup() {
+        return Date.now() >= this.stoptime
+    }
     async search() {
         return new Promise(async (res) => {
             let opening = this.getOpenings()
             if (opening) console.log("opening")
             let start = Date.now()
+            this.stoptime = start + 15000
             this.evaluated = 0
+            this.q = 0
             let maxPly = 3, bestplys = []
             if (opening) {
                 opening = opening.map(e => {
@@ -247,21 +253,19 @@ class Engine {
                 let alpha = -Infinity, beta = Infinity
                 for (const x of moves) {
                     this.game.move(x)
-                    let result = this.alphabeta(alpha, beta, ply) * ((ply % 2) === 0 ? -1 : 1)
+                    let result = -this.alphabeta(alpha, beta, ply)
                     this.game.undo()
-                    console.log(result, ply)
-                    if (result >= best) {
+                    if (result > best) {
                         best = result
                         picked = x
-                        // alpha = Math.max(alpha, result)
                     }
                     scores.push(result)
                     globalThis.postMessage(["info", this.evaluated + " positions evaluated."])
                 }
-                // console.log(scores)
+                if (this.timeup()) break
                 bestplys.push(picked)
             }
-            console.log(bestplys)
+            console.log(bestplys, this.q)
             this.transposition = {}
             globalThis.postMessage(["info", this.evaluated + " positions evaluated in " + ((Date.now() - start) / 1000).toFixed(2) + " seconds."])
             res(bestplys[bestplys.length - 1])
@@ -273,6 +277,13 @@ class Engine {
             depth,
             flag,
             move
+        }
+    }
+    getHistory(move, _eval) {
+        if (this.history[move.from]) {
+            if (this.history[move.from][move.to]) {
+                this.hist = _eval
+            }
         }
     }
     alphabeta(alpha, beta, depth) {
@@ -303,12 +314,12 @@ class Engine {
         // sort moves as follows, hash entry, then captures, then history hueristic
         .sort((e, e1) => {
             if (entry && entry.san === e.san) {
-                return -100000
+                return -10000000
             }
             if (e.captured) {
                 return keys.indices["w" + e.piece] - keys.indices["w" + e.captured]
             }
-            return 1000000
+            return 10000000
         })
         // best = alpha to check if it there is a fail-low (no best move found)
         let best = alpha, a = alpha, mv
@@ -328,6 +339,7 @@ class Engine {
                 best = val
                 a = val
             }
+            if (this.timeup()) break
         }
         // if no best move is found, dont store in transposition
         if (alpha === best) {
@@ -340,7 +352,8 @@ class Engine {
     }
     qSearch(alpha, beta, depth) {
         this.evaluated += 1
-        if (depth === 0 && this.game.in_check()) return 0
+        this.q += 1
+        if (depth === 0 || this.timeup()) return this.eval()
         var best = this.eval()
         if (best >= beta) return beta
         if (best > alpha) alpha = best
