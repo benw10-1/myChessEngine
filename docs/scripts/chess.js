@@ -229,10 +229,11 @@ class Piece {
                 let sq = this.square.board.getSquareXY(event.clientX, event.clientY)
                 if (sq && this.square.board.game.turn() === this.square.board.user && this.square.board.playing) {
                     if (sq.move && sq.move.flags.indexOf("p") > -1) {
+                        let promoting = sq.move
                         sq.getPromotion(sq.move.color).then(data => {
                             if (data) {
-                                sq.move.promotion = data
-                                this.square.board.move(sq.move)
+                                promoting.promotion = data
+                                this.square.board.move(promoting)
                             }
                         })
                     }
@@ -357,7 +358,7 @@ class Chessboard {
         this.game = new Chess(opt.fen)
         this.container = document.createElement("div")
         this.container.classList = "board-cont"
-
+        this.promoting = null
         this.squares = []
         this.lastMove = [null, null]
         this.user = WHITE
