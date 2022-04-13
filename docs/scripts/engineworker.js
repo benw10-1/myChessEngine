@@ -267,7 +267,8 @@ class Engine {
             }
             console.log(bestplys, this.q)
             this.transposition = {}
-            globalThis.postMessage(["info", this.evaluated + " positions evaluated in " + ((Date.now() - start) / 1000).toFixed(2) + " seconds."])
+            if (opening) globalThis.postMessage(["info", "Book move!"])
+            else globalThis.postMessage(["info", this.evaluated + " positions evaluated in " + ((Date.now() - start) / 1000).toFixed(2) + " seconds."])
             res(bestplys[bestplys.length - 1])
         })
     }
@@ -279,12 +280,30 @@ class Engine {
             move
         }
     }
-    getHistory(move, _eval) {
-        if (this.history[move.from]) {
-            if (this.history[move.from][move.to]) {
-                this.hist = _eval
+    updateHistory(move, depth) {
+        if (this.history[this.game.turn()]) {
+            if (this.history[this.game.turn()][move.from]) {
+                if (this.history[this.game.turn()][move.from][move.to]) this.history[this.game.turn()][move.from][move.to] += (1 << depth)
+                else this.history[this.game.turn()][move.from][move.to] = (1 << depth)
+            }
+            else {
+                this.history[this.game.turn()][move.from] = {}
+                this.history[this.game.turn()][move.from][move.to] = (1 << depth)
             }
         }
+        else {
+            this.history[this.game.turn()] = {}
+            this.history[this.game.turn()][move.from] = {}
+            this.history[this.game.turn()][move.from][move.to] = (1 << depth)
+        }
+    }
+    getHistory(move) {
+        if (this.history[this.game.turn()]) {
+            if (this.history[this.game.turn()][move.from]) {
+                return this.history[this.game.turn()][move.from][move.to]
+            }
+        }
+        return null
     }
     alphabeta(alpha, beta, depth) {
         this.evaluated += 1
@@ -319,7 +338,10 @@ class Engine {
             if (e.captured) {
                 return keys.indices["w" + e.piece] - keys.indices["w" + e.captured]
             }
-            return 10000000
+            let val = 10000000
+            let hist = this.getHistory(e)
+            if (hist) val -= hist
+            return val
         })
         // best = alpha to check if it there is a fail-low (no best move found)
         let best = alpha, a = alpha, mv
@@ -330,6 +352,7 @@ class Engine {
             this.game.undo()
             // refutation node (previosly found maximum assured score for the opposing player is smaller than searched value)
             if (val >= beta) {
+                this.updateHistory(x, depth)
                 this.transposition[h] = this.TTentry(beta, depth, "low", x)
                 return beta
             }
