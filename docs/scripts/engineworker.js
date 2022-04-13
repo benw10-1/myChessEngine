@@ -289,7 +289,7 @@ class Engine {
     alphabeta(alpha, beta, depth) {
         this.evaluated += 1
         let h = this.hash()
-        if (depth === 0) return this.qSearch(alpha, beta, 6)
+        if (depth === 0 || this.timeup()) return this.qSearch(alpha, beta, 6)
         let val, entry
         if (this.transposition[h]) {
             let out = this.transposition[h]
@@ -339,7 +339,6 @@ class Engine {
                 best = val
                 a = val
             }
-            if (this.timeup()) break
         }
         // if no best move is found, dont store in transposition
         if (alpha === best) {
