@@ -8,6 +8,7 @@ let filedata = fs.readFileSync(infile)
 let data = JSON.parse(filedata)
 let out = {}
 for (const item of data) {
+    if (item.name.indexOf("Gambit") > -1) continue
     let moves = item.moves.split(" ").filter(e => !e.match(/[0-9]+\./))
     let last = out
     for (const move of moves) {

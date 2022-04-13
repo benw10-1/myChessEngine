@@ -159,6 +159,11 @@ class EngineWorker {
     pop() {
         return this.q.pop()
     }
+    clearQ() {
+        let temp = this.q
+        this.q = []
+        return temp
+    }
 }
 
 class Piece {
@@ -479,21 +484,25 @@ class Chessboard {
         }
         if (this.game.turn() !== this.user && move) {
             this.engineWorker.command("move", move)
-            let inter = setInterval(_ => {
-                while (this.engineWorker.q.length > 0) {
-                    let last = this.engineWorker.pop()
-                    console.log(last)
-                    if (last && last[0] === "move") {
-                        this.move(last[1])
+            let rendering = false
+            let inter = setInterval(async _ => {
+                if (rendering) return
+                rendering = true
+                let q = this.engineWorker.clearQ()
+                for (const x of q) {
+                    if (x[0] === "move") {
+                        this.move(x[1])
                         clearInterval(inter)
                     }
-                    if (last && last[0] === "info") this.setOutput(last[1])
+                    if (x[0] === "info") this.setOutput(x[1])
+                    await delay(10)
                 }
-            }, 100)
+                rendering = false
+            }, 200)
         }
         return move
     }
     endgame(winner) {
-        console.log("gg, winner is: " + winner)
+        alert("gg, winner is: " + winner)
     }
 }

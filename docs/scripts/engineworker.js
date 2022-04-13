@@ -112,18 +112,18 @@ const keys = {
         wk: 60000
     },
     hash_indices: {
-        K: 2,
-        Q: 3,
-        R: 4,
-        B: 5,
-        N: 6,
-        P: 7,
-        p: 8,
-        n: 9,
-        b: 10,
-        r: 11,
-        q: 12,
-        k: 13
+        bk: 2,
+        bq: 3,
+        br: 4,
+        bb: 5,
+        bn: 6,
+        bp: 7,
+        wp: 8,
+        wn: 9,
+        wb: 10,
+        wr: 11,
+        wq: 12,
+        wk: 13
     },
     
 }
@@ -183,31 +183,27 @@ class Engine {
         for (let i=0; i < 64; i++) {
             let seed = []
             for (const key in keys.hash_indices) {
-                seed[keys.hash_indices[key]] = Math.random() * 2**64
+                seed[keys.hash_indices[key]] = Math.random() * (2**64 - 1)
             }
             table.push(seed)
         }
         this.#moveSeed = Math.random() * (2**64 - 1)
-        this.#levelSeeds = []
         return table
     }
-    hash(level) {
+    hash() {
         if (!this.zob) return 0
         let h = 0
         if (this.game.turn() === BLACK) h ^= this.#moveSeed
-        if (!this.#levelSeeds[level]) this.#levelSeeds[level] = Math.random() * (2**64 - 1)
-        h ^= this.#levelSeeds[level]
         let b = this.game.board()
         for (let i=0; i < 64; i++) {
             let item = b[Math.floor(i/8)][i % 8]
             if (!item) continue
-            let hash_index = keys.hash_indices[item.color === BLACK ? item.type.toUpperCase() : item.type]
+            let hash_index = keys.hash_indices[item.color + item.type]
             h ^= this.zob[i][hash_index]
         }
         return h
     }
     eval() {
-        this.evaluated += 1
         let squares = this.game.board()
         let total = 0, i = 0
         for (const row of squares) {
@@ -221,11 +217,12 @@ class Engine {
                 i++
             }
         }
-        return total
+        return total * ((this.game.turn() === BLACK) ? -1 : 1)
     }
     async search() {
         return new Promise(async (res) => {
             let opening = this.getOpenings()
+            if (opening) console.log("opening")
             let start = Date.now()
             this.evaluated = 0
             let maxPly = 3, bestplys = []
@@ -236,90 +233,129 @@ class Engine {
                     return move
                 })
             }
-            let moves = opening ?? [...this.game.moves({verbose: true})]
-            moves = moves
-            moves.sort((v1, v2) => {
-                if (v1.flags.indexOf("c") > -1) return -1
-                return 1
-            })
+            let moves = opening ?? [...this.game.moves()]
+            let scores = []
             for (let ply=0; ply < maxPly; ply++) {
                 let best = -Infinity, picked
+                let i = 0
+                moves.sort(() => {
+                    let sc = -scores[i]
+                    i++
+                    return sc
+                })
+                scores = []
+                let alpha = -Infinity, beta = Infinity
                 for (const x of moves) {
                     this.game.move(x)
-                    let result = this.alphabeta(-Infinity, Infinity, ply, 0) * (this.color === BLACK ? -1 : 1)
+                    let result = this.alphabeta(alpha, beta, ply) * ((ply % 2) === 0 ? -1 : 1)
                     this.game.undo()
+                    console.log(result, ply)
                     if (result >= best) {
                         best = result
                         picked = x
+                        // alpha = Math.max(alpha, result)
                     }
+                    scores.push(result)
+                    globalThis.postMessage(["info", this.evaluated + " positions evaluated."])
                 }
+                // console.log(scores)
                 bestplys.push(picked)
-                globalThis.postMessage(["info", this.evaluated + " positions evaluated."])
             }
-            await delay(100)
+            console.log(bestplys)
             this.transposition = {}
             globalThis.postMessage(["info", this.evaluated + " positions evaluated in " + ((Date.now() - start) / 1000).toFixed(2) + " seconds."])
             res(bestplys[bestplys.length - 1])
         })
     }
-    alphabeta(alpha, beta, depth, level) {
-        if (depth === 0) return this.qSearch(alpha, beta, Math.max(4, 50 - (level * 15)))
-        let val
-        let h = this.hash(level)
+    TTentry(score, depth, flag, move) {
+        return {
+            score,
+            depth,
+            flag,
+            move
+        }
+    }
+    alphabeta(alpha, beta, depth) {
+        this.evaluated += 1
+        let h = this.hash()
+        if (depth === 0) return this.qSearch(alpha, beta, 6)
+        let val, entry
         if (this.transposition[h]) {
-            val = this.transposition[h]
-            if (val >= beta) return beta
-            if (val > alpha) alpha = val
+            let out = this.transposition[h]
+            if (out.depth >= depth) {
+                switch(out.flag) {
+                    case "low":
+                        alpha = Math.max(alpha, out.score)
+                        break
+                    case "hash":
+                        return out.score
+                    case "high":
+                        beta = Math.min(beta, out.score)
+                        break
+                    default:
+                        break
+                }
+                if (alpha >= beta) return beta
+            }
+            else entry = out.move
         }
         let moves = this.game.moves({verbose: true})
-        // look at captures first
-        moves.sort((v1, v2) => {
-            if (v1.flags.indexOf("c") > -1) return -1
-            return 1
+        // sort moves as follows, hash entry, then captures, then history hueristic
+        .sort((e, e1) => {
+            if (entry && entry.san === e.san) {
+                return -100000
+            }
+            if (e.captured) {
+                return keys.indices["w" + e.piece] - keys.indices["w" + e.captured]
+            }
+            return 1000000
         })
         // best = alpha to check if it there is a fail-low (no best move found)
-        let best = alpha, a = alpha
+        let best = alpha, a = alpha, mv
         for (const x of moves) {
             this.game.move(x)
             // negate alpha, beta, and result while switching alpha and beta arguments to emulate the opposing player also making an "alphabeta" search
-            val = -this.alphabeta(-beta, -a, depth - 1, level + 1)
+            val = -this.alphabeta(-beta, -a, depth - 1)
             this.game.undo()
             // refutation node (previosly found maximum assured score for the opposing player is smaller than searched value)
             if (val >= beta) {
-                this.transposition[h] = beta
+                this.transposition[h] = this.TTentry(beta, depth, "low", x)
                 return beta
             }
             // if our searched value is greater than our current iterations maximum assured value then store it
             if (val > a) {
+                mv = x
                 best = val
                 a = val
             }
         }
         // if no best move is found, dont store in transposition
-        if (alpha === best) return alpha
+        if (alpha === best) {
+            this.transposition[h] = this.TTentry(alpha, depth, "high", mv)
+            return alpha
+        }
         // otherwise store our best move at depth {level} in the table
-        this.transposition[h] = best
+        this.transposition[h] = this.TTentry(best, depth, "hash", mv)
         return best
     }
     qSearch(alpha, beta, depth) {
+        this.evaluated += 1
         if (depth === 0 && this.game.in_check()) return 0
         var best = this.eval()
         if (best >= beta) return beta
         if (best > alpha) alpha = best
-        let moves = this.game.moves()
+        let moves = this.game.moves({verbose: true}).filter(e => e.captured).sort((e, e1) => {
+            return keys.indices["w" + e.piece] - keys.indices["w" + e.captured]
+        })
         for (const move of moves) {
-            let mv = this.game.move(move)
-            if (!this.game.in_check() || mv.flags.indexOf("c") < 0) {
-                this.game.undo()
-                continue
-            }
+            this.game.move(move)
             let evalpl = -this.qSearch(-beta, -alpha, depth - 1)
             this.game.undo()
             
             if (evalpl >= beta) return beta
             if (evalpl > alpha) alpha = evalpl
         }
-        return alpha === best ? -alpha : alpha
+        return alpha
     }
 }
 self.importScripts("chess-js.js")
