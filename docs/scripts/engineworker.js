@@ -266,6 +266,7 @@ class Engine {
                 bestplys.push(picked)
             }
             console.log(bestplys, this.q)
+            console.log(this.history)
             this.transposition = {}
             if (opening) globalThis.postMessage(["info", "Book move!"])
             else globalThis.postMessage(["info", this.evaluated + " positions evaluated in " + ((Date.now() - start) / 1000).toFixed(2) + " seconds."])
@@ -329,6 +330,7 @@ class Engine {
             }
             else entry = out.move
         }
+        if (this.game.in_checkmate()) return 1000000000 * (this.game.turn() === BLACK ? -1 : 1)
         let moves = this.game.moves({verbose: true})
         // sort moves as follows, hash entry, then captures, then history hueristic
         .sort((e, e1) => {
@@ -340,19 +342,21 @@ class Engine {
             }
             let val = 10000000
             let hist = this.getHistory(e)
-            if (hist) val -= hist
+            if (hist) {
+                val -= hist
+            }
             return val
         })
         // best = alpha to check if it there is a fail-low (no best move found)
         let best = alpha, a = alpha, mv
         for (const x of moves) {
-            this.game.move(x)
+            let mv = this.game.move(x)
             // negate alpha, beta, and result while switching alpha and beta arguments to emulate the opposing player also making an "alphabeta" search
             val = -this.alphabeta(-beta, -a, depth - 1)
             this.game.undo()
             // refutation node (previosly found maximum assured score for the opposing player is smaller than searched value)
             if (val >= beta) {
-                this.updateHistory(x, depth)
+                if (mv.flags.indexOf("c") < 0) this.updateHistory(x, depth)
                 this.transposition[h] = this.TTentry(beta, depth, "low", x)
                 return beta
             }
@@ -375,7 +379,8 @@ class Engine {
     qSearch(alpha, beta, depth) {
         this.evaluated += 1
         this.q += 1
-        if (depth === 0 || this.timeup()) return this.eval()
+        if (this.timeup()) return 0
+        if (depth === 0) return this.eval()
         var best = this.eval()
         if (best >= beta) return beta
         if (best > alpha) alpha = best
