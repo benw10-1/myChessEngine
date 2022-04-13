@@ -242,7 +242,7 @@ class Engine {
             let moves = opening ?? [...this.game.moves()]
             let scores = []
             for (let ply=0; ply < maxPly; ply++) {
-                let best = -Infinity, picked
+                let picked
                 let i = 0
                 moves.sort(() => {
                     let sc = -scores[i]
@@ -253,10 +253,10 @@ class Engine {
                 let alpha = -Infinity, beta = Infinity
                 for (const x of moves) {
                     this.game.move(x)
-                    let result = -this.alphabeta(alpha, beta, ply)
+                    let result = this.alphabeta(alpha, beta, ply) * (this.color === BLACK ? -1 : 1)
                     this.game.undo()
-                    if (result > best) {
-                        best = result
+                    if (result > alpha) {
+                        alpha = result
                         picked = x
                     }
                     scores.push(result)
