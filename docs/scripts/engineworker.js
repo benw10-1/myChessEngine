@@ -309,7 +309,7 @@ class Engine {
     alphabeta(alpha, beta, depth) {
         this.evaluated += 1
         let h = this.hash()
-        if (depth === 0 || this.timeup()) return this.qSearch(alpha, beta, 6)
+        if (depth === 0 || this.timeup()) return this.qSearch(alpha, beta, 4)
         let val, entry
         if (this.transposition[h]) {
             let out = this.transposition[h]
@@ -330,7 +330,7 @@ class Engine {
             }
             else entry = out.move
         }
-        if (this.game.in_checkmate()) return 1000000000 * (this.game.turn() === BLACK ? -1 : 1)
+        if (this.game.in_checkmate()) return 1000000000 * (this.game.turn() === BLACK ? 1 : -1)
         let moves = this.game.moves({verbose: true})
         // sort moves as follows, hash entry, then captures, then history hueristic
         .sort((e, e1) => {

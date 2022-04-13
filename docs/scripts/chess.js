@@ -196,9 +196,14 @@ class Piece {
             return [Math.max(r.left, Math.min(r.left + r.width, x)), Math.max(r.top, Math.min(r.top + r.height, y))]
         }
         const clickhndl = event => {
+            if (this.square.move) {
+                this.square.clickhndle()
+                clearSelec()
+                return
+            }
             clearSelec()
             if (this.square.board.game.turn() !== this.square.board.user || !this.square.board.playing) return
-            for (const x of this.square.board.game.moves({square: this.square.fen, verbose: true})) {
+            for (const x of this.square.board.game.moves({square: this.square.san, verbose: true})) {
                 const sq = this.square.board.getSquareFEN(x.to)
                 if (sq) {
                     sq.overlayState(true, false)
@@ -252,11 +257,10 @@ class Square {
         (x + y) % 2 === 0 ? this.container.className = "square prim" : this.container.className = "square sec"
         this.selected = false
         this.board = board
-        this.fen = keys.letters[x] + keys.nums[y]
+        this.san = keys.letters[x] + keys.nums[y]
         this.overlay = document.createElement("div")
         this.overlay.className = "square-over hidden"
-
-        this.overlay.onclick = () => {
+        this.clickhndle = () => {
             if (!this.move) return
             if (this.move.flags.indexOf("p") > -1) {
                 this.getPromotion(this.move.color).then(data => {
@@ -271,7 +275,7 @@ class Square {
             this.board.move(this.move)
             this.move = undefined
         }
-
+        this.overlay.addEventListener("click", this.clickhndle)
         this.container.appendChild(this.overlay)
 
         if (piece) {
