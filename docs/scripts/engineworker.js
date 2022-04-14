@@ -332,7 +332,6 @@ class Engine {
             }
             else entry = out.move
         }
-        if (this.game.in_checkmate()) return 1000000000 * (this.game.turn() === BLACK ? 1 : -1)
         let moves = this.game.moves({verbose: true})
         // sort moves as follows, hash entry, then captures, then history hueristic
         .sort((e, e1) => {
