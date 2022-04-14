@@ -327,6 +327,7 @@ class Engine {
                         break
                 }
                 if (alpha >= beta) return beta
+                entry = out.move
             }
             else entry = out.move
         }
