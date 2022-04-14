@@ -195,8 +195,8 @@ class Piece {
             let r = this.square.board.container.getBoundingClientRect()
             return [Math.max(r.left, Math.min(r.left + r.width, x)), Math.max(r.top, Math.min(r.top + r.height, y))]
         }
-        const clickhndl = event => {
-            if (this.square.move) {
+        const clickhndl = (event) => {
+            if (this.square.move && event !== "drag") {
                 this.square.clickhndle()
                 clearSelec()
                 return
@@ -215,7 +215,7 @@ class Piece {
             event.preventDefault()
             img.style.cursor = "grabbing"
             img.classList.add("over")
-            clickhndl()
+            clickhndl("drag")
             let [x, y] = getCenter(img)
             const movehndl = event => {
                 let [nx, ny] = clamp(event.clientX, event.clientY)

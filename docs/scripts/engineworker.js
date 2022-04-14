@@ -228,7 +228,7 @@ class Engine {
             let opening = this.getOpenings()
             if (opening) console.log("opening")
             let start = Date.now()
-            this.stoptime = start + 15000
+            this.stoptime = start + 25000
             this.evaluated = 0
             this.q = 0
             let maxPly = 3, bestplys = []
@@ -309,6 +309,7 @@ class Engine {
     alphabeta(alpha, beta, depth) {
         this.evaluated += 1
         let h = this.hash()
+        
         if (depth === 0 || this.timeup()) return this.qSearch(alpha, beta, 4)
         let val, entry
         if (this.transposition[h]) {
@@ -349,27 +350,25 @@ class Engine {
             return val
         })
         // best = alpha to check if it there is a fail-low (no best move found)
-        let best = alpha, a = alpha, mv
+        let best = -Infinity, a = alpha, mv
         for (const x of moves) {
-            let mv = this.game.move(x)
+            let move = this.game.move(x)
             // negate alpha, beta, and result while switching alpha and beta arguments to emulate the opposing player also making an "alphabeta" search
             val = -this.alphabeta(-beta, -a, depth - 1)
             this.game.undo()
             // refutation node (previosly found maximum assured score for the opposing player is smaller than searched value)
             if (val >= beta) {
-                if (mv.flags.indexOf("c") < 0) this.updateHistory(x, depth)
-                this.transposition[h] = this.TTentry(beta, depth, "low", x)
+                if (move.flags.indexOf("c") < 0) this.updateHistory(move, depth)
+                this.transposition[h] = this.TTentry(beta, depth, "low", move)
                 return beta
             }
-            // if our searched value is greater than our current iterations maximum assured value then store it
-            if (val > a) {
-                mv = x
+            a = Math.max(a, val)
+            if (val > best) {
+                mv = move
                 best = val
-                a = val
             }
         }
-        // if no best move is found, dont store in transposition
-        if (alpha === best) {
+        if (best <= alpha) {
             this.transposition[h] = this.TTentry(alpha, depth, "high", mv)
             return alpha
         }
@@ -377,6 +376,39 @@ class Engine {
         this.transposition[h] = this.TTentry(best, depth, "hash", mv)
         return best
     }
+    // strategicQ(alpha, beta) {
+    //     this.evaluated += 1
+    //     this.q += 1
+    //     if (this.timeup()) return 0
+    //     let best = this.eval()
+    //     if (best >= beta) return beta
+    //     if (best > alpha) alpha = best
+    //     let moves = this.game.moves({verbose: true}).filter(e => e.captured).sort((e, e1) => {
+    //         return keys.indices["w" + e.piece] - keys.indices["w" + e.captured]
+    //     })
+    //     let a = alpha
+    //     for (const move of moves) {
+    //         this.game.move(move)
+    //         let evalpls = this.evalpls(move)
+    //         if (evalpls > a) {
+    //             let actual = -this.strategicQ(-beta, -a)
+    //             if (actual > best) {
+    //                 best = actual
+    //                 if (best >= beta) {
+    //                     this.game.undo()
+    //                     return best
+    //                 }
+    //                 if (best > a) a = best
+    //             }
+    //         }
+    //         else if (evalpls > best) best = evalpls
+    //         this.game.undo()
+    //     }
+
+    // }
+    // evalPlus(move) {
+
+    // }
     qSearch(alpha, beta, depth) {
         this.evaluated += 1
         this.q += 1
