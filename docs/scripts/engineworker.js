@@ -153,11 +153,14 @@ class Engine {
         this.openings = openings
         this.sendMsg = sendMsg
         this.history = {}
+        this.killers = []
+        this.r = 1
+        this.qtranspo = {}
     }
     getOpenings() {
         if (!this.openings) this.openings = []
         let hist = this.game.history()
-        if (hist.length < 4) {
+        if (!hist || hist.length < 4) {
             let empty = 0
             this.game.board().forEach(e => {
                 e.forEach(x => {
@@ -225,52 +228,62 @@ class Engine {
     }
     async search() {
         return new Promise(async (res) => {
-            let opening = this.getOpenings()
-            if (opening) console.log("opening")
             let start = Date.now()
-            this.stoptime = start + 25000
+            this.stoptime = start + 30000
+
             this.evaluated = 0
             this.q = 0
-            let maxPly = 3, bestplys = []
-            if (opening) {
-                opening = opening.map(e => {
-                    let move = this.game.move(e)
-                    this.game.undo()
-                    return move
+
+            let openings = this.getOpenings()
+            if (openings) {
+                let temp = []
+                let premoves = this.game.moves()
+                premoves.forEach(e => {
+                    if (openings.indexOf(e) > -1) temp.push(1)
+                    else temp.push(-1)
                 })
+                openings = temp
             }
-            let moves = opening ?? [...this.game.moves()]
-            let scores = []
+            let maxPly = 5, bestplys = [], lastSearch = openings ?? []
             for (let ply=0; ply < maxPly; ply++) {
-                let picked
-                let i = 0
-                moves.sort(() => {
-                    let sc = -scores[i]
-                    i++
-                    return sc
-                })
-                scores = []
-                let alpha = -Infinity, beta = Infinity
-                for (const x of moves) {
-                    this.game.move(x)
-                    let result = this.alphabeta(alpha, beta, ply) * (this.color === BLACK ? -1 : 1)
-                    this.game.undo()
-                    if (result > alpha) {
-                        alpha = result
-                        picked = x
-                    }
-                    scores.push(result)
-                    globalThis.postMessage(["info", this.evaluated + " positions evaluated."])
-                }
+                let [result, last] = this.pvRoot(ply, lastSearch)
                 if (this.timeup()) break
-                bestplys.push(picked)
+                bestplys.push(result)
+                lastSearch = last
             }
-            console.log(bestplys, this.q)
+            console.log(bestplys, this.q, this.ns)
             console.log(this.history)
             this.transposition = {}
-            if (opening) globalThis.postMessage(["info", "Book move!"])
+            this.qtranspo = {}
+            this.history = {}
+            if (openings) globalThis.postMessage(["info", "Book move! (" + ((Date.now() - start) / 1000).toFixed(2) + "s)"])
             else globalThis.postMessage(["info", this.evaluated + " positions evaluated in " + ((Date.now() - start) / 1000).toFixed(2) + " seconds."])
-            res(bestplys[bestplys.length - 1])
+            if (this.game.game_over()) {
+                if (this.game.in_checkmate()) {
+                    globalThis.postMessage(["info", "Checkmate! Winner is " + (this.game.turn() === BLACK ? WHITE : BLACK)])
+                }
+                if (this.game.in_stalemate()) {
+                    globalThis.postMessage(["info", "Stalemate!"])
+                }
+                if (this.game.in_threefold_repitition()) {
+                    globalThis.postMessage(["info", "Threefold repition. Draw!"])
+                }
+                if (this.game.insufficient_material()) {
+                    globalThis.postMessage(["info", "Insufficient matierial. Draw!"])
+                }
+
+                res()
+                return
+            }
+            let returned = bestplys[bestplys.length - 1]
+            if (!returned) {
+                let last
+                for (const x of bestplys) {
+                    if (!x) returned = last
+                    last = x
+                }
+            }
+            res(returned)
         })
     }
     TTentry(score, depth, flag, move) {
@@ -282,152 +295,162 @@ class Engine {
         }
     }
     updateHistory(move, depth) {
-        if (this.history[this.game.turn()]) {
-            if (this.history[this.game.turn()][move.from]) {
-                if (this.history[this.game.turn()][move.from][move.to]) this.history[this.game.turn()][move.from][move.to] += (1 << depth)
-                else this.history[this.game.turn()][move.from][move.to] = (1 << depth)
-            }
-            else {
-                this.history[this.game.turn()][move.from] = {}
-                this.history[this.game.turn()][move.from][move.to] = (1 << depth)
-            }
+        if (this.history[move.color + move.piece]) {
+            if (this.history[move.color + move.piece][move.to]) this.history[move.color + move.piece][move.to] += (1 << depth)
+            else this.history[move.color + move.piece][move.to] = (1 << depth)
         }
         else {
-            this.history[this.game.turn()] = {}
-            this.history[this.game.turn()][move.from] = {}
-            this.history[this.game.turn()][move.from][move.to] = (1 << depth)
+            this.history[move.color + move.piece] = {}
+            this.history[move.color + move.piece][move.to] = (1 << depth)
         }
     }
     getHistory(move) {
-        if (this.history[this.game.turn()]) {
-            if (this.history[this.game.turn()][move.from]) {
-                return this.history[this.game.turn()][move.from][move.to]
-            }
-        }
+        if (this.history[move.color + move.piece]) return this.history[move.color + move.piece][move.color]
         return null
     }
-    alphabeta(alpha, beta, depth) {
+    storeKiller(move, depth) {
+        if (!this.killers[depth]) this.killers[depth] = []
+        if (this.killers[depth][1] && this.killers[depth][1].san === move) return
+        this.killers[depth][0] = this.killers[depth][1]
+        this.killers[depth][1] = move.color + move.san
+    }
+    isKiller(move, depth) {
+        if (!this.killers[depth]) return false
+        return (this.killers[depth][0] === (move.color + move.san)) || (this.killers[depth][1] === (move.color + move.san))
+    }
+    qSearch(alpha, beta, depth) {
+        this.q += 1
         this.evaluated += 1
-        let h = this.hash()
-        
-        if (depth === 0 || this.timeup()) return this.qSearch(alpha, beta, 4)
-        let val, entry
+
+        if (this.timeup()) return 0
+        if (depth === 0) return this.eval()
+
+        var best = this.eval()
+        if (best > alpha) {
+            if (best >= beta) return best
+            alpha = best
+        }
+
+        let moves = this.game.moves({verbose: true, captures: true}).sort((e, e1) => {
+            return keys.indices["w" + e.piece] - keys.indices["w" + e.captured]
+        })
+
+        for (const move of moves) {
+            this.game.move(move)
+            let val = -this.qSearch(-beta, -alpha, depth - 1)
+            this.game.undo()
+            
+            if (val > best) {
+                if (val >= beta) return val
+                best = val
+            }
+        }
+
+        return best
+    }
+    pvRoot(ply, lastSearch) {
+        let i = 0
+        let moves = this.game.moves({verbose:true}).sort(() => {
+            let ret = -(lastSearch[i] ?? -100000)
+            i++
+            return ret
+        })
+        let best = -Infinity, scores = [], chosen
+        for (const x of moves) {
+            this.game.move(x)
+            let result = -this.pvSearch(-Infinity, Infinity, ply)
+            this.game.undo()
+
+            scores.push(result)
+
+            if (result > best) {
+                chosen = x
+                best = result
+            }
+
+            if (this.timeup()) return [0, 0]
+            globalThis.postMessage(["info", this.evaluated + " positions evaluated"])
+        }
+
+        return [chosen, scores]
+    }
+    pvSearch(alpha, beta, depth) {
+        if (this.timeup()) return 0
+        if (depth === 0) return this.qSearch(alpha, beta, 4)
+
+        this.evaluated += 1
+
+        let h = this.hash(), entry
+
         if (this.transposition[h]) {
             let out = this.transposition[h]
-            if (out.depth >= depth) {
-                switch(out.flag) {
-                    case "low":
-                        alpha = Math.max(alpha, out.score)
-                        break
-                    case "hash":
-                        return out.score
-                    case "high":
-                        beta = Math.min(beta, out.score)
-                        break
-                    default:
-                        break
-                }
-                if (alpha >= beta) return beta
-                entry = out.move
+            switch(out.flag) {
+                case "high":
+                    beta = Math.min(beta, out.score)
+                    break
+                case "hash":
+                    return out.score
+                default:
+                    break
             }
-            else entry = out.move
+            entry = out.move
         }
-        let moves = this.game.moves({verbose: true})
-        // sort moves as follows, hash entry, then captures, then history hueristic
-        .sort((e, e1) => {
+
+        let moves = this.game.moves({verbose:true}).sort((e, e1) => {
             if (entry && entry.san === e.san) {
                 return -10000000
+            }
+            if (e.promoted) {
+                return keys.indices["w" + e.piece] - keys.indices["w" + e.promoted]
             }
             if (e.captured) {
                 return keys.indices["w" + e.piece] - keys.indices["w" + e.captured]
             }
-            let val = 10000000
-            let hist = this.getHistory(e)
-            if (hist) {
-                val -= hist
-            }
+            
+            let val = 100000000
+            if (this.isKiller(e, depth)) return 10000
+
+            // let hist = this.getHistory(e)
+            // if (hist) val -= hist
             return val
         })
-        // best = alpha to check if it there is a fail-low (no best move found)
-        let best = -Infinity, a = alpha, mv
-        for (const x of moves) {
-            let move = this.game.move(x)
-            // negate alpha, beta, and result while switching alpha and beta arguments to emulate the opposing player also making an "alphabeta" search
-            val = -this.alphabeta(-beta, -a, depth - 1)
-            this.game.undo()
-            // refutation node (previosly found maximum assured score for the opposing player is smaller than searched value)
-            if (val >= beta) {
-                if (move.flags.indexOf("c") < 0) this.updateHistory(move, depth)
-                this.transposition[h] = this.TTentry(beta, depth, "low", move)
-                return beta
+
+        this.game.move(moves[0])
+        let best = -this.pvSearch(-beta, -alpha, depth - 1)
+        this.game.undo()
+
+        if (best > alpha) {
+            if (best >= beta) {
+                this.transposition[h] = this.TTentry(best, depth, "high", moves[0])
+                if (moves[0].flags.indexOf("c") < 0) this.updateHistory(moves[0], depth)
+                return best
             }
-            a = Math.max(a, val)
+            alpha = best
+        }
+
+        let move, chosen
+        for (const x of moves) {
+            move = this.game.move(x)
+            let val = -this.pvSearch(-alpha - 1, -alpha, depth - 1)
+            if (val > best && val < beta) {
+                val = -this.pvSearch(-beta, -alpha, depth - 1)
+                alpha = Math.max(val, alpha)
+            }
+            this.game.undo()
+
             if (val > best) {
-                mv = move
+                if (val >= beta) {
+                    this.transposition[h] = this.TTentry(val, depth, "high", move)
+                    if (moves[0].flags.indexOf("c") < 0) this.updateHistory(move, depth)
+                    return val
+                }
+                chosen = move
                 best = val
             }
         }
-        if (best <= alpha) {
-            this.transposition[h] = this.TTentry(alpha, depth, "high", mv)
-            return alpha
-        }
-        // otherwise store our best move at depth {level} in the table
-        this.transposition[h] = this.TTentry(best, depth, "hash", mv)
+
+        if (chosen) this.transposition[h] = this.TTentry(best, depth, "hash", chosen)
         return best
-    }
-    // strategicQ(alpha, beta) {
-    //     this.evaluated += 1
-    //     this.q += 1
-    //     if (this.timeup()) return 0
-    //     let best = this.eval()
-    //     if (best >= beta) return beta
-    //     if (best > alpha) alpha = best
-    //     let moves = this.game.moves({verbose: true}).filter(e => e.captured).sort((e, e1) => {
-    //         return keys.indices["w" + e.piece] - keys.indices["w" + e.captured]
-    //     })
-    //     let a = alpha
-    //     for (const move of moves) {
-    //         this.game.move(move)
-    //         let evalpls = this.evalpls(move)
-    //         if (evalpls > a) {
-    //             let actual = -this.strategicQ(-beta, -a)
-    //             if (actual > best) {
-    //                 best = actual
-    //                 if (best >= beta) {
-    //                     this.game.undo()
-    //                     return best
-    //                 }
-    //                 if (best > a) a = best
-    //             }
-    //         }
-    //         else if (evalpls > best) best = evalpls
-    //         this.game.undo()
-    //     }
-
-    // }
-    // evalPlus(move) {
-
-    // }
-    qSearch(alpha, beta, depth) {
-        this.evaluated += 1
-        this.q += 1
-        if (this.timeup()) return 0
-        if (depth === 0) return this.eval()
-        var best = this.eval()
-        if (best >= beta) return beta
-        if (best > alpha) alpha = best
-        let moves = this.game.moves({verbose: true}).filter(e => e.captured).sort((e, e1) => {
-            return keys.indices["w" + e.piece] - keys.indices["w" + e.captured]
-        })
-        for (const move of moves) {
-            this.game.move(move)
-            let evalpl = -this.qSearch(-beta, -alpha, depth - 1)
-            this.game.undo()
-            
-            if (evalpl >= beta) return beta
-            if (evalpl > alpha) alpha = evalpl
-        }
-        return alpha
     }
 }
 self.importScripts("chess-js.js")

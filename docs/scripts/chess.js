@@ -182,11 +182,11 @@ class Piece {
         }
 
         const clearSelec = _ => {
-            let board = this.square.board.squares
-            for (let y = 0; y < board.length; y++) {
-                for (let x = 0; x < board[y].length; x++) {
-                    board[y][x].overlayState(false, true)
-                    board[y][x].move = undefined
+            let b = this.square.board.squares
+            for (let y = 0; y < b.length; y++) {
+                for (let x = 0; x < b[y].length; x++) {
+                    b[y][x].overlayState(false, true)
+                    b[y][x].move = undefined
                 }
             }
         }
