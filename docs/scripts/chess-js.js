@@ -193,34 +193,6 @@ function infer_piece_type(san) {
   }
   return piece_type
 }
-function ascii() {
-  var s = '   +------------------------+\n'
-  for (var i = SQUARE_MAP.a8; i <= SQUARE_MAP.h1; i++) {
-    /* display the rank */
-    if (file(i) === 0) {
-      s += ' ' + '87654321'[rank(i)] + ' |'
-    }
-
-    /* empty piece */
-    if (board[i] == null) {
-      s += ' . '
-    } else {
-      var piece = board[i].type
-      var color = board[i].color
-      var symbol = color === WHITE ? piece.toUpperCase() : piece.toLowerCase()
-      s += ' ' + symbol + ' '
-    }
-
-    if ((i + 1) & 0x88) {
-      s += '|\n'
-      i += 8
-    }
-  }
-  s += '   +------------------------+\n'
-  s += '     a  b  c  d  e  f  g  h\n'
-
-  return s
-}
 
 // parses all of the decorators out of a SAN string
 function stripped_san(move) {
@@ -333,7 +305,34 @@ const Chess = function (fen) {
   } else {
     load(fen)
   }
-
+  function ascii() {
+    var s = '   +------------------------+\n'
+    for (var i = SQUARE_MAP.a8; i <= SQUARE_MAP.h1; i++) {
+      /* display the rank */
+      if (file(i) === 0) {
+        s += ' ' + '87654321'[rank(i)] + ' |'
+      }
+  
+      /* empty piece */
+      if (board[i] == null) {
+        s += ' . '
+      } else {
+        var piece = board[i].type
+        var color = board[i].color
+        var symbol = color === WHITE ? piece.toUpperCase() : piece.toLowerCase()
+        s += ' ' + symbol + ' '
+      }
+  
+      if ((i + 1) & 0x88) {
+        s += '|\n'
+        i += 8
+      }
+    }
+    s += '   +------------------------+\n'
+    s += '     a  b  c  d  e  f  g  h\n'
+  
+    return s
+  }
   function clear(keep_headers) {
     if (typeof keep_headers === 'undefined') {
       keep_headers = false
@@ -677,10 +676,12 @@ const Chess = function (fen) {
     }
     return move
   }
-
   function generate_moves(options) {
     function add_move(board, moves, from, to, flags) {
       /* if pawn promotion */
+      if (options && options.captures) {
+        if (!(flags & BITS.CAPTURE)) return
+      }
       if (
         board[from].type === PAWN &&
         (rank(to) === RANK_8 || rank(to) === RANK_1)
@@ -702,7 +703,6 @@ const Chess = function (fen) {
     var first_sq = SQUARE_MAP.a8
     var last_sq = SQUARE_MAP.h1
     var single_square = false
-
     /* do we want legal moves? */
     var legal =
       typeof options !== 'undefined' && 'legal' in options
@@ -726,14 +726,12 @@ const Chess = function (fen) {
         return []
       }
     }
-
     for (var i = first_sq; i <= last_sq; i++) {
       /* did we run off the end of the board */
       if (i & 0x88) {
         i += 7
         continue
       }
-
       var piece = board[i]
       if (piece == null || piece.color !== us) {
         continue
@@ -759,7 +757,7 @@ const Chess = function (fen) {
 
           if (board[square] != null && board[square].color === them) {
             add_move(board, moves, i, square, BITS.CAPTURE)
-          } else if (square === ep_square) {
+          } else if (square === ep_square && board[ep_square] && board[ep_square].color === them) { //BUG HERE doesnt check board[ep_square] && board[ep_square].color === them
             add_move(board, moves, i, ep_square, BITS.EP_CAPTURE)
           }
         }
@@ -837,13 +835,12 @@ const Chess = function (fen) {
     /* filter out illegal moves */
     var legal_moves = []
     for (var i = 0, len = moves.length; i < len; i++) {
-      make_move(moves[i])
+      make_move(moves[i], options)
       if (!king_attacked(us)) {
         legal_moves.push(moves[i])
       }
       undo_move()
     }
-
     return legal_moves
   }
 
@@ -1055,14 +1052,13 @@ const Chess = function (fen) {
     })
   }
 
-  function make_move(move) {
+  function make_move(move, options) {
     var us = turn
     var them = swap_color(us)
     push(move)
 
     board[move.to] = board[move.from]
     board[move.from] = null
-
     /* if ep capture, remove the captured pawn */
     if (move.flags & BITS.EP_CAPTURE) {
       if (turn === BLACK) {
@@ -1071,7 +1067,6 @@ const Chess = function (fen) {
         board[move.to + 16] = null
       }
     }
-
     /* if pawn promotion, replace with new piece */
     if (move.flags & BITS.PROMOTION) {
       board[move.to] = { type: move.promotion, color: us }
@@ -1820,6 +1815,10 @@ const Chess = function (fen) {
 
       // allow the user to specify the sloppy move parser to work around over
       // disambiguation bugs in Fritz and Chessbase
+      if (move === "NULL") {
+        turn = swap_color(turn)
+        return move
+      }
       var sloppy =
         typeof options !== 'undefined' && 'sloppy' in options
           ? options.sloppy
