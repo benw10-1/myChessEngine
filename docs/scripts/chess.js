@@ -146,14 +146,16 @@ class EngineWorker {
         }
 
         this.loadOpenings().then(openings => {
+            let temp = new Chess(fen)
             this.command("init", { fen, color, openings })
+            if (temp.turn() === color) this.command("move")
         })
     }
     async loadOpenings() {
         const link = "openings/processed.json"
         return fetch(link).then(data => data.json())
     }
-    command(cmd, data={}) {
+    command(cmd, data) {
         this.worker.postMessage({ cmd, data })
     }
     pop() {
@@ -350,7 +352,7 @@ class Square {
     }
 }
 
-class Chessboard {
+class CB {
     constructor(target, opt) {
         this.opt = opt
         this.target = target
@@ -365,6 +367,18 @@ class Chessboard {
         this.engineWorker = new EngineWorker(opt.fen, this.user === WHITE ? BLACK : WHITE)
         this.playing = true
         let b = this.game.board()
+        let rendering
+        this.msgloop = setInterval(async _ => {
+            if (rendering) return
+            rendering = true
+            let q = this.engineWorker.clearQ()
+            for (const x of q) {
+                if (x[0] === "move") this.move(x[1])
+                if (x[0] === "info") this.setOutput(x[1])
+                await delay(5)
+            }
+            rendering = false
+        }, 200)
 
         for (let y=0; y < 8; y++) {
             let row = document.createElement("div")
@@ -450,11 +464,8 @@ class Chessboard {
         for (const el of this.container.querySelectorAll(".square-over")) {
             el.classList.add("hidden")
         }
+        if (this.game.game_over()) return
         let move = this.game.move(mv)
-        if (this.game.game_over()) {
-            this.playing = false
-            this.endgame(this.game.turn() === BLACK ? "White" : "Black")
-        }
         if (move) {
             for (const item of this.lastMove) {
                 if (item) item.overlayState(false)
@@ -486,28 +497,8 @@ class Chessboard {
                 let rookto = this.getSquareFEN(keys.letters[index + 1] + move.to[1])
                 rookto.setPiece(rookfrom.piece)
             }
-        }
-        if (this.game.turn() !== this.user && move) {
-            this.engineWorker.command("move", move)
-            let rendering = false
-            let inter = setInterval(async _ => {
-                if (rendering) return
-                rendering = true
-                let q = this.engineWorker.clearQ()
-                for (const x of q) {
-                    if (x[0] === "move") {
-                        this.move(x[1])
-                        clearInterval(inter)
-                    }
-                    if (x[0] === "info") this.setOutput(x[1])
-                    await delay(10)
-                }
-                rendering = false
-            }, 200)
+            if (this.game.turn() !== this.user) this.engineWorker.command("move", move)
         }
         return move
-    }
-    endgame(winner) {
-        alert("gg, winner is: " + winner)
     }
 }
