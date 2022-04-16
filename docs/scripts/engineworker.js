@@ -178,7 +178,7 @@ class Engine {
             if (last[move]) last = last[move]
             else return
         }
-        if (!last || Object.keys(last).length < 1) return
+        if (!last) return
         let ks = Object.keys(last)
         return ks
     }
@@ -246,11 +246,15 @@ class Engine {
                 })
                 openings = temp
             }
-            let maxPly = 5, bestplys = [], lastSearch = openings ?? []
-            for (let ply=0; ply < maxPly; ply++) {
+            let maxPly = openings ? 4 : 8, bestplys = [], lastSearch = openings ?? []
+            for (let ply=0; ply < maxPly;ply++) {
+                let strt = Date.now()
                 let [result, last] = this.pvRoot(ply, lastSearch)
+                let end = Date.now() - strt
+                console.log("ply " + ply + " in " + (end/1000) + " seconds")
                 if (this.timeup()) break
                 bestplys.push(result)
+                if (Date.now() >= (this.stoptime - end)) break
                 lastSearch = last
             }
             console.log(bestplys, this.q, this.ns)
@@ -259,19 +263,6 @@ class Engine {
             this.qtranspo = {}
             this.history = {}
             this.game.move(bestplys[bestplys.length - 1])
-            if (this.game.game_over()) {
-                if (this.game.in_checkmate()) {
-                    globalThis.postMessage(["info", "Checkmate! Winner is " + (this.game.turn() === BLACK ? "White" : "Black")])
-                }
-                if (this.game.in_stalemate()) {
-                    globalThis.postMessage(["info", "Stalemate!"])
-                }
-                if (this.game.insufficient_material()) {
-                    globalThis.postMessage(["info", "Insufficient matierial. Draw!"])
-                }
-                res(bestplys[bestplys.length - 1])
-                return
-            }
             this.game.undo()
             if (openings) globalThis.postMessage(["info", "Book move! (" + ((Date.now() - start) / 1000).toFixed(2) + "s)"])
             else globalThis.postMessage(["info", this.evaluated + " positions evaluated in " + ((Date.now() - start) / 1000).toFixed(2) + " seconds."])
@@ -367,10 +358,10 @@ class Engine {
 
         return [chosen, scores]
     }
-    pvSearch(alpha, beta, depth) {
+    pvSearch(alpha, beta, depth, ply) {
         if (this.timeup()) return 0
         let h = this.hash(), entry
-        if (depth === 0) return this.qSearch(alpha, beta, 4)
+        if (depth === 0) return this.qSearch(alpha, beta, Math.min(Math.max(1, ply - 1), 5))
 
         this.evaluated += 1
 
@@ -404,14 +395,14 @@ class Engine {
             }
             
             let val = 100000000
-            if (this.isKiller(e, depth)) return 10000
+            if (this.isKiller(e, depth)) return 1000000
 
-            // let hist = this.getHistory(e)
-            // if (hist) val -= hist
+            let hist = this.getHistory(e)
+            if (hist) val -= hist
             return val
         })
         this.game.move(moves[0])
-        let best = -this.pvSearch(-beta, -alpha, depth - 1)
+        let best = -this.pvSearch(-beta, -alpha, depth - 1, ply)
         this.game.undo()
 
         if (best > alpha) {
@@ -438,14 +429,16 @@ class Engine {
             if (val > best) {
                 if (val >= beta) {
                     this.transposition[h] = this.TTentry(val, depth, "high", move)
-                    if (moves[0].flags.indexOf("c") < 0) this.updateHistory(move, depth)
                     return val
                 }
                 chosen = move
                 best = val
             }
         }
-        if (chosen) this.transposition[h] = this.TTentry(best, depth, "hash", chosen)
+        if (chosen) {
+            this.transposition[h] = this.TTentry(best, depth, "hash", chosen)
+            if (chosen.flags.indexOf("c") < 0) this.updateHistory(chosen, depth)
+        }
         return best
     }
 }
@@ -464,6 +457,15 @@ onmessage = function(e) {
             if (data) engine.game.move(data)
             engine.search().then(result => {
                 engine.game.move(result)
+                if (engine.game.in_checkmate()) {
+                    globalThis.postMessage(["info", "Checkmate! Winner is " + (engine.game.turn() === BLACK ? "White" : "Black")])
+                }
+                if (engine.game.in_stalemate()) {
+                    globalThis.postMessage(["info", "Stalemate!"])
+                }
+                if (engine.game.insufficient_material()) {
+                    globalThis.postMessage(["info", "Insufficient matierial. Draw!"])
+                }
                 this.postMessage(["move", result])
             })
             break
