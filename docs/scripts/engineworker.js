@@ -246,10 +246,13 @@ class Engine {
                 })
                 openings = temp
             }
-            let maxPly = 5, bestplys = [], lastSearch = openings ?? []
-            for (let ply=0; ply < maxPly; ply++) {
+            let maxPly = openings ? 4 : 8, bestplys = [], lastSearch = openings ?? []
+            for (let ply=0; ply < maxPly;ply++) {
+                let strt = Date.now()
                 let [result, last] = this.pvRoot(ply, lastSearch)
-                if (this.timeup()) break
+                let end = Date.now() - strt
+                console.log("ply " + ply + " in " + (end/1000) + " seconds")
+                if (this.timeup() || Date.now() >= (this.stoptime - end)) break
                 bestplys.push(result)
                 lastSearch = last
             }
@@ -404,10 +407,10 @@ class Engine {
             }
             
             let val = 100000000
-            if (this.isKiller(e, depth)) return 10000
+            if (this.isKiller(e, depth)) return 1000000
 
-            // let hist = this.getHistory(e)
-            // if (hist) val -= hist
+            let hist = this.getHistory(e)
+            if (hist) val -= hist
             return val
         })
         this.game.move(moves[0])
@@ -438,14 +441,16 @@ class Engine {
             if (val > best) {
                 if (val >= beta) {
                     this.transposition[h] = this.TTentry(val, depth, "high", move)
-                    if (moves[0].flags.indexOf("c") < 0) this.updateHistory(move, depth)
                     return val
                 }
                 chosen = move
                 best = val
             }
         }
-        if (chosen) this.transposition[h] = this.TTentry(best, depth, "hash", chosen)
+        if (chosen) {
+            this.transposition[h] = this.TTentry(best, depth, "hash", chosen)
+            if (chosen.flags.indexOf("c") < 0) this.updateHistory(chosen, depth)
+        }
         return best
     }
 }
