@@ -208,6 +208,7 @@ class Engine {
         return h
     }
     eval() {
+        if (this.game.in_draw()) return 0
         if (this.game.in_checkmate()) return 1000000000 * ((this.game.turn() === BLACK) ? 1 : -1)
         let squares = this.game.board()
         let total = 0, i = 0
@@ -268,7 +269,7 @@ class Engine {
                 if (this.game.insufficient_material()) {
                     globalThis.postMessage(["info", "Insufficient matierial. Draw!"])
                 }
-                res()
+                res(bestplys[bestplys.length - 1])
                 return
             }
             this.game.undo()
@@ -368,29 +369,29 @@ class Engine {
     }
     pvSearch(alpha, beta, depth) {
         if (this.timeup()) return 0
-        // if (this.game.in_checkmate()) return (2 * keys.indices.wk) * (this.game.turn === BLACK ? 1 : -1)
-        if (this.game.in_draw()) return 0
+        let h = this.hash(), entry
         if (depth === 0) return this.qSearch(alpha, beta, 4)
 
         this.evaluated += 1
 
-        let h = this.hash(), entry
-
         if (this.transposition[h]) {
             let out = this.transposition[h]
             switch(out.flag) {
+                // case "low":
+                //     alpha = Math.max(alpha, out.score)
+                //     break
                 case "high":
                     beta = Math.min(beta, out.score)
                     break
                 case "hash":
                     return out.score
                 default:
-                    break
+                    break;
             }
             entry = out.move
         }
         let moves = this.game.moves({verbose:true})
-        if (moves.length === 0 && this.game.in_check()) return this.qSearch(alpha, beta, 1)
+        if (moves.length === 0) return this.qSearch(alpha, beta, 1)
         moves = moves.sort((e, e1) => {
             if (entry && entry.san === e.san) {
                 return -10000000
@@ -425,7 +426,9 @@ class Engine {
         let move, chosen
         for (const x of moves) {
             move = this.game.move(x)
+            // try to produce a beta cutoff
             let val = -this.pvSearch(-alpha - 1, -alpha, depth - 1)
+            // if null search greater than our best move AND its within our beta
             if (val > best && val < beta) {
                 val = -this.pvSearch(-beta, -alpha, depth - 1)
                 alpha = Math.max(val, alpha)
@@ -442,7 +445,6 @@ class Engine {
                 best = val
             }
         }
-
         if (chosen) this.transposition[h] = this.TTentry(best, depth, "hash", chosen)
         return best
     }

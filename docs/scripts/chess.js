@@ -461,10 +461,10 @@ class CB {
         return this.getSquare(Math.floor(mx/(rect.width/8)), Math.floor(my/(rect.height/8)))
     }
     move(mv) {
-        if (!this.playing) return
         for (const el of this.container.querySelectorAll(".square-over")) {
             el.classList.add("hidden")
         }
+        if (this.game.game_over()) return
         let move = this.game.move(mv)
         if (move) {
             for (const item of this.lastMove) {
@@ -497,12 +497,8 @@ class CB {
                 let rookto = this.getSquareFEN(keys.letters[index + 1] + move.to[1])
                 rookto.setPiece(rookfrom.piece)
             }
+            if (this.game.turn() !== this.user) this.engineWorker.command("move", move)
         }
-        if (this.game.game_over()) {
-            this.playing = false
-            return move
-        }
-        if (this.game.turn() !== this.user && move) this.engineWorker.command("move", move)
         return move
     }
 }
