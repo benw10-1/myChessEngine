@@ -208,6 +208,7 @@ class Engine {
         return h
     }
     eval() {
+        if (this.game.in_checkmate()) return 1000000000 * ((this.game.turn() === BLACK) ? 1 : -1)
         let squares = this.game.board()
         let total = 0, i = 0
         for (const row of squares) {
@@ -256,34 +257,24 @@ class Engine {
             this.transposition = {}
             this.qtranspo = {}
             this.history = {}
-            if (openings) globalThis.postMessage(["info", "Book move! (" + ((Date.now() - start) / 1000).toFixed(2) + "s)"])
-            else globalThis.postMessage(["info", this.evaluated + " positions evaluated in " + ((Date.now() - start) / 1000).toFixed(2) + " seconds."])
+            this.game.move(bestplys[bestplys.length - 1])
             if (this.game.game_over()) {
                 if (this.game.in_checkmate()) {
-                    globalThis.postMessage(["info", "Checkmate! Winner is " + (this.game.turn() === BLACK ? WHITE : BLACK)])
+                    globalThis.postMessage(["info", "Checkmate! Winner is " + (this.game.turn() === BLACK ? "White" : "Black")])
                 }
                 if (this.game.in_stalemate()) {
                     globalThis.postMessage(["info", "Stalemate!"])
                 }
-                if (this.game.in_threefold_repitition()) {
-                    globalThis.postMessage(["info", "Threefold repition. Draw!"])
-                }
                 if (this.game.insufficient_material()) {
                     globalThis.postMessage(["info", "Insufficient matierial. Draw!"])
                 }
-
                 res()
                 return
             }
-            let returned = bestplys[bestplys.length - 1]
-            if (!returned) {
-                let last
-                for (const x of bestplys) {
-                    if (!x) returned = last
-                    last = x
-                }
-            }
-            res(returned)
+            this.game.undo()
+            if (openings) globalThis.postMessage(["info", "Book move! (" + ((Date.now() - start) / 1000).toFixed(2) + "s)"])
+            else globalThis.postMessage(["info", this.evaluated + " positions evaluated in " + ((Date.now() - start) / 1000).toFixed(2) + " seconds."])
+            res(bestplys[bestplys.length - 1])
         })
     }
     TTentry(score, depth, flag, move) {
@@ -331,7 +322,8 @@ class Engine {
             alpha = best
         }
 
-        let moves = this.game.moves({verbose: true, captures: true}).sort((e, e1) => {
+        let moves = this.game.moves({verbose: true, captures: true})
+        moves = moves.sort((e, e1) => {
             return keys.indices["w" + e.piece] - keys.indices["w" + e.captured]
         })
 
@@ -376,6 +368,8 @@ class Engine {
     }
     pvSearch(alpha, beta, depth) {
         if (this.timeup()) return 0
+        // if (this.game.in_checkmate()) return (2 * keys.indices.wk) * (this.game.turn === BLACK ? 1 : -1)
+        if (this.game.in_draw()) return 0
         if (depth === 0) return this.qSearch(alpha, beta, 4)
 
         this.evaluated += 1
@@ -395,8 +389,9 @@ class Engine {
             }
             entry = out.move
         }
-
-        let moves = this.game.moves({verbose:true}).sort((e, e1) => {
+        let moves = this.game.moves({verbose:true})
+        if (moves.length === 0 && this.game.in_check()) return this.qSearch(alpha, beta, 1)
+        moves = moves.sort((e, e1) => {
             if (entry && entry.san === e.san) {
                 return -10000000
             }
@@ -414,7 +409,6 @@ class Engine {
             // if (hist) val -= hist
             return val
         })
-
         this.game.move(moves[0])
         let best = -this.pvSearch(-beta, -alpha, depth - 1)
         this.game.undo()
@@ -461,12 +455,11 @@ onmessage = function(e) {
     switch(cmd) {
         case "init":
             let game = new Chess(data.fen)
-            
             engine = new Engine(game, data.color, data.openings)
             break
         case "move":
             if (!engine) return
-            engine.game.move(data)
+            if (data) engine.game.move(data)
             engine.search().then(result => {
                 engine.game.move(result)
                 this.postMessage(["move", result])
