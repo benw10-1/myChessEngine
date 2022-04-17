@@ -73,14 +73,14 @@ const keys = {
          14,  25,  24,  15,   8,  25,  20,  15,
          19,  20,  11,   6,   7,   6,  20,  16,
          -7,   2, -15, -12, -14, -15, -10, -10].reverse().map(e => e === 0 ? e : -e),
-    brpref: [35,  29,  33,   4,  37,  33,  56,  50,
+    brpref: [35,  25,  33,   4,  37,  33,  56,  50,
         55,  29,  56,  67,  55,  62,  34,  60,
         19,  35,  28,  33,  45,  27,  25,  15,
          0,   5,  16,  13,  18,  -4,  -9,  -6,
        -28, -35, -16, -21, -13, -29, -46, -30,
        -42, -28, -42, -25, -25, -35, -26, -46,
        -53, -38, -31, -26, -29, -43, -44, -53,
-       -30, -24, -18,   5,  -2, -18, -31, -32].reverse().map(e => e === 0 ? e : -e),
+       -30, -29, -18,   5,  -2, -18, -31, -32].reverse().map(e => e === 0 ? e : -e),
     bqpref: [6,   1,  -8,-104,  69,  24,  88,  26,
         14,  32,  60, -10,  20,  76,  57,  24,
         -2,  43,  32,  60,  72,  63,  43,   2,
@@ -97,6 +97,22 @@ const keys = {
         -47, -42, -43, -79, -64, -32, -29, -32,
          -4,   3, -14, -50, -57, -18,  13,   4,
          17,  30,  -3, -14,   6,  -1,  40,  18].reverse().map(e => e === 0 ? e : -e),
+    ewkpref: [0,  0,  0, 0, 0,  0,  0, 0,
+        0,  65,  65,  65,  65,  65,  65,   0,
+        0,  65, 75,  75, 75,  75,  65, 0,
+        0,  65,  75,  100, 85, 75, 65, 0,
+        0, 65, 75, 85, 100, 75,  65, 0,
+        0, 65, 75, 75, 75, 75, 65, 0,
+         0,   65, 65, 65, 65, 65,  65, 0,
+         0,  0,  0, 0, 0,  0,  0, 0],
+    ebkpref: [0,  0,  0, 0, 0,  0,  0, 0,
+        0,  65,  65,  65,  65,  65,  65,   0,
+        0,  65, 75,  75, 75,  75,  65, 0,
+        0,  65,  75,  100, 85, 75, 65, 0,
+        0, 65, 75, 85, 100, 75,  65, 0,
+        0, 65, 75, 75, 75, 75, 65, 0,
+         0,   65, 65, 65, 65, 65,  65, 0,
+         0,  0,  0, 0, 0,  0,  0, 0].reverse().map(e => e === 0 ? e : -e),
     indices: {
         bk: -60000,
         bq: -929,
@@ -158,7 +174,7 @@ class Engine {
         this.qtranspo = {}
     }
     getOpenings() {
-        if (!this.openings) this.openings = []
+        if (!this.openings) this.openings = {}
         let hist = this.game.history()
         if (!hist || hist.length < 4) {
             let empty = 0
@@ -169,17 +185,13 @@ class Engine {
             })
             if (empty > 34) return
         }
-        let last
+        let last = this.openings
         for (const move of hist) {
-            if (!last) {
-                last = this.openings[move]
-                continue
-            }
             if (last[move]) last = last[move]
             else return
         }
-        if (!last) return
         let ks = Object.keys(last)
+        if (ks.length === 0) return
         return ks
     }
     initZob() {
@@ -209,7 +221,10 @@ class Engine {
     }
     eval() {
         if (this.game.in_draw()) return 0
-        if (this.game.in_checkmate()) return 1000000000 * ((this.game.turn() === BLACK) ? 1 : -1)
+        if (this.game.in_checkmate()) {
+            let dfr = this.game.history().length - this.roothist.length
+            return (keys.indices.wk - dfr) * ((this.game.turn() === BLACK) ? 1 : -1)
+        }
         let squares = this.game.board()
         let total = 0, i = 0
         for (const row of squares) {
@@ -218,7 +233,11 @@ class Engine {
                     i++
                     continue
                 }
-                total += keys[item.color + item.type + "pref"][i]
+
+                if (this.endgame && item.type === "k") {
+                    total += keys["e" + item.color + item.type + "pref"][i]
+                }
+                else total += keys[item.color + item.type + "pref"][i]
                 total += keys.indices[item.color + item.type]
                 i++
             }
@@ -236,18 +255,7 @@ class Engine {
             this.evaluated = 0
             this.q = 0
 
-            let openings = this.getOpenings()
-            if (openings) {
-                let temp = []
-                let premoves = this.game.moves()
-                premoves.forEach(e => {
-                    if (openings.indexOf(e) > -1) temp.push(1)
-                    else temp.push(-1)
-                })
-                openings = temp
-            }
-            let maxPly = 8, bestplys = [], lastSearch = openings ?? []
-            if (openings) maxPly = 4
+            let maxPly = 8, bestplys = [], lastSearch = {}
             let whitemat = 0, blackmat = 0
             for (const row of this.game.board()) {
                 for (const x of row) {
@@ -259,19 +267,20 @@ class Engine {
             console.log(whitemat, blackmat)
             if (blackmat <= 130 || whitemat <= 130) {
                 this.endgame = true
-                maxPly = 18
+                maxPly = 12
             }
-            for (let ply=0; ply < maxPly;ply++) {
+            this.roothist = [...this.game.history()]
+            for (let ply=1; ply <= maxPly;ply++) {
                 let strt = Date.now()
                 let [result, last] = this.pvRoot(ply, lastSearch)
                 let end = Date.now() - strt
                 console.log("ply " + ply + " in " + (end/1000) + " seconds")
                 if (this.timeup()) break
-                bestplys.push(result)
+                if (result) bestplys.push(result)
                 if (Date.now() >= (this.stoptime - end)) break
                 lastSearch = last
             }
-            console.log(bestplys, this.q, this.ns)
+            console.log(bestplys, this.q)
             console.log(this.history)
             this.transposition = {}
             this.qtranspo = {}
@@ -279,8 +288,7 @@ class Engine {
             this.endgame = false
             this.game.move(bestplys[bestplys.length - 1])
             this.game.undo()
-            if (openings) globalThis.postMessage(["info", "Book move! (" + ((Date.now() - start) / 1000).toFixed(2) + "s)"])
-            else globalThis.postMessage(["info", this.evaluated + " positions evaluated in " + ((Date.now() - start) / 1000).toFixed(2) + " seconds."])
+            globalThis.postMessage(["info", this.evaluated + " positions evaluated in " + ((Date.now() - start) / 1000).toFixed(2) + " seconds."])
             res(bestplys[bestplys.length - 1])
         })
     }
@@ -317,21 +325,24 @@ class Engine {
         return (this.killers[depth][0] === (move.color + move.san)) || (this.killers[depth][1] === (move.color + move.san))
     }
     qSearch(alpha, beta, depth) {
-        this.q += 1
         this.evaluated += 1
 
         if (this.timeup()) return 0
-        if (depth === 0) return this.eval()
-
+        if (depth <= 1) return this.eval()
+        this.q += 1
         var best = this.eval()
         if (best > alpha) {
             if (best >= beta) return best
             alpha = best
         }
 
-        let moves = this.game.moves({verbose: true, captures: true})
+        let moves = this.game.moves({verbose: true, captures: true, promotions: true})
+        if (moves.length === 0) return best
         moves = moves.sort((e, e1) => {
-            return keys.indices["w" + e.piece] - keys.indices["w" + e.captured]
+            let [v1, v2] = [this.getMoveVal(e, null, depth), this.getMoveVal(e1, null, depth)]
+            if (v1 < v2) return -1
+            if (v1 > v2) return 1
+            return 0
         })
 
         for (const move of moves) {
@@ -348,76 +359,81 @@ class Engine {
         return best
     }
     pvRoot(ply, lastSearch) {
-        let i = 0
-        let moves = this.game.moves({verbose:true}).sort(() => {
-            let ret = -(lastSearch[i] ?? -100000)
-            i++
-            return ret
-        })
-        let best = -Infinity, scores = [], chosen
-        for (const x of moves) {
-            this.game.move(x)
-            let result = -this.pvSearch(-Infinity, Infinity, ply)
-            this.game.undo()
-
-            scores.push(result)
-
-            if (result > best) {
-                chosen = x
-                best = result
+        let openings = this.getOpenings()
+        if (openings) {
+            if (ply >= 4) return [false, false]
+            for (const key of openings) {
+                lastSearch[key] = -1000000
             }
-
-            if (this.timeup()) return [0, 0]
-            globalThis.postMessage(["info", this.evaluated + " positions evaluated"])
         }
 
+        let [chosen, scores] = this.pvSearch(-Infinity, Infinity, ply, ply, lastSearch)
         return [chosen, scores]
     }
-    pvSearch(alpha, beta, depth, ply) {
+    getMoveVal(move, entry, depth) {
+        if (entry && entry.san === move.san) {
+            return -10000000
+        }
+        if (move.promoted) {
+            return keys.indices["w" + move.piece] - keys.indices["w" + move.promoted]
+        }
+        if (move.captured) {
+            return keys.indices["w" + move.piece] - keys.indices["w" + move.captured]
+        }
+        
+        let val = 100000000
+        if (this.isKiller(move, depth)) return 1000000
+
+        // let hist = this.getHistory(move)
+        // if (hist) val -= hist
+        return val
+    }
+    pvSearch(alpha, beta, depth, ply, rootMoves) {
         if (this.timeup()) return 0
         let h = this.hash(), entry
-        if (depth === 0) {
-            if (this.endgame) return this.qSearch(alpha, beta, 1)
-            return this.qSearch(alpha, beta, Math.min(Math.max(1, ply - 1), 5))
-        }
-
+        if ((depth + 1) % 4 === 0) globalThis.postMessage(["info", this.evaluated + " positions evaluated."])
+        if (depth === 0) return this.qSearch(alpha, beta, ply)
         this.evaluated += 1
-
+       
         if (this.transposition[h]) entry = this.transposition[h].move
-        let moves = this.game.moves({verbose:true})
-        if (moves.length === 0) return this.qSearch(alpha, beta, 1)
-        moves = moves.sort((e, e1) => {
-            if (entry && entry.san === e.san) {
-                return -10000000
-            }
-            if (e.promoted) {
-                return keys.indices["w" + e.piece] - keys.indices["w" + e.promoted]
-            }
-            if (e.captured) {
-                return keys.indices["w" + e.piece] - keys.indices["w" + e.captured]
-            }
-            
-            let val = 100000000
-            if (this.isKiller(e, depth)) return 1000000
 
-            let hist = this.getHistory(e)
-            if (hist) val -= hist
-            return val
-        })
-        this.game.move(moves[0])
-        let best = -this.pvSearch(-beta, -alpha, depth - 1, ply)
-        this.game.undo()
+        let moves = this.game.moves({verbose:true})
+        if (moves.length === 0) return this.eval()
+
+        let best = -Infinity
+
+        if (rootMoves) {
+            moves = moves.sort((e, e1) => {
+                let [v1, v2] = [-(rootMoves[e.san] ?? -10000000), -(rootMoves[e1.san] ?? -10000000)]
+                if (v1 < v2) return -1
+                if (v1 > v2) return 1
+                return 0
+            })
+            console.log(moves, rootMoves, this.q)
+            best = -Infinity
+        }
+        else {
+            moves = moves.sort((e, e1) => {
+                let [v1, v2] = [this.getMoveVal(e, entry, depth), this.getMoveVal(e1, entry, depth)]
+                if (v1 < v2) return -1
+                if (v1 > v2) return 1
+                return 0
+            })
+            this.game.move(moves[0])
+            best = -this.pvSearch(-beta, -alpha, depth - 1, ply)
+            this.game.undo()
+        }
 
         if (best > alpha) {
             if (best >= beta) {
-                // this.transposition[h] = this.TTentry(best, depth, "high", moves[0])
-                if (moves[0].flags.indexOf("c") < 0) this.updateHistory(moves[0], depth)
+                this.transposition[h] = this.TTentry(best, depth, "low", moves[0])
+                this.storeKiller(moves[0], depth)
                 return best
             }
             alpha = best
         }
 
-        let move, chosen
+        let move, chosen, scores = {}
         for (const x of moves) {
             move = this.game.move(x)
             // try to produce a beta cutoff
@@ -428,10 +444,11 @@ class Engine {
                 alpha = Math.max(val, alpha)
             }
             this.game.undo()
-
+            if (rootMoves) scores[x.san] = val
             if (val > best) {
                 if (val >= beta) {
-                    this.transposition[h] = this.TTentry(val, depth, "high", move)
+                    // this.transposition[h] = this.TTentry(best, depth, "low", move)
+                    if (!move.captured) this.storeKiller(move, depth)
                     return val
                 }
                 chosen = move
@@ -440,7 +457,19 @@ class Engine {
         }
         if (chosen) {
             this.transposition[h] = this.TTentry(best, depth, "hash", chosen)
-            if (chosen.flags.indexOf("c") < 0) this.updateHistory(chosen, depth)
+            // if (!chosen.captured) this.updateHistory(chosen, depth)
+        }
+        if (rootMoves) {
+            if (!chosen) {
+                let best = -Infinity
+                for (const mv in scores) {
+                    if (scores[mv] > best) {
+                        best = scores[mv]
+                        chosen = mv
+                    }
+                }
+            }
+            return [chosen, scores]
         }
         return best
     }
@@ -475,4 +504,4 @@ onmessage = function(e) {
         default:
             break
     }
-} 
+}
