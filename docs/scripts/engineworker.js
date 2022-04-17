@@ -275,7 +275,7 @@ class Engine {
                 let [result, last] = this.pvRoot(ply, lastSearch)
                 let end = Date.now() - strt
                 console.log("ply " + ply + " in " + (end/1000) + " seconds")
-                if (this.timeup()) break
+                // if (this.timeup()) break
                 if (result) bestplys.push(result)
                 if (Date.now() >= (this.stoptime - end)) break
                 lastSearch = last
