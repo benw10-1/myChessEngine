@@ -679,8 +679,16 @@ const Chess = function (fen) {
   function generate_moves(options) {
     function add_move(board, moves, from, to, flags) {
       /* if pawn promotion */
-      if (options && options.captures) {
-        if (!(flags & BITS.CAPTURE)) return
+      if (options) {
+        if (options.promotions && options.captures) {
+          if (!(flags & BITS.CAPTURE || flags & BITS.PROMOTION)) return
+        }
+        else if (options.captures) {
+          if (!(flags & BITS.CAPTURE)) return
+        }
+        else if (options.promotions) {
+          if (!(flags & BITS.PROMOTION)) return
+        }
       }
       if (
         board[from].type === PAWN &&
