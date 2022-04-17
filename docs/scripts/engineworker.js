@@ -246,7 +246,21 @@ class Engine {
                 })
                 openings = temp
             }
-            let maxPly = openings ? 4 : 8, bestplys = [], lastSearch = openings ?? []
+            let maxPly = 8, bestplys = [], lastSearch = openings ?? []
+            if (openings) maxPly = 4
+            let whitemat = 0, blackmat = 0
+            for (const row of this.game.board()) {
+                for (const x of row) {
+                    if (!x || x.type === "k") continue
+                    if (x.color === WHITE) whitemat += keys.indices["w" + x.type]
+                    else blackmat += keys.indices["w" + x.type]
+                }
+            }
+            console.log(whitemat, blackmat)
+            if (blackmat <= 130 || whitemat <= 130) {
+                this.endgame = true
+                maxPly = 18
+            }
             for (let ply=0; ply < maxPly;ply++) {
                 let strt = Date.now()
                 let [result, last] = this.pvRoot(ply, lastSearch)
@@ -262,6 +276,7 @@ class Engine {
             this.transposition = {}
             this.qtranspo = {}
             this.history = {}
+            this.endgame = false
             this.game.move(bestplys[bestplys.length - 1])
             this.game.undo()
             if (openings) globalThis.postMessage(["info", "Book move! (" + ((Date.now() - start) / 1000).toFixed(2) + "s)"])
@@ -361,26 +376,14 @@ class Engine {
     pvSearch(alpha, beta, depth, ply) {
         if (this.timeup()) return 0
         let h = this.hash(), entry
-        if (depth === 0) return this.qSearch(alpha, beta, Math.min(Math.max(1, ply - 1), 5))
+        if (depth === 0) {
+            if (this.endgame) return this.qSearch(alpha, beta, 1)
+            return this.qSearch(alpha, beta, Math.min(Math.max(1, ply - 1), 5))
+        }
 
         this.evaluated += 1
 
-        if (this.transposition[h]) {
-            let out = this.transposition[h]
-            switch(out.flag) {
-                // case "low":
-                //     alpha = Math.max(alpha, out.score)
-                //     break
-                case "high":
-                    beta = Math.min(beta, out.score)
-                    break
-                case "hash":
-                    return out.score
-                default:
-                    break;
-            }
-            entry = out.move
-        }
+        if (this.transposition[h]) entry = this.transposition[h].move
         let moves = this.game.moves({verbose:true})
         if (moves.length === 0) return this.qSearch(alpha, beta, 1)
         moves = moves.sort((e, e1) => {
@@ -407,7 +410,7 @@ class Engine {
 
         if (best > alpha) {
             if (best >= beta) {
-                this.transposition[h] = this.TTentry(best, depth, "high", moves[0])
+                // this.transposition[h] = this.TTentry(best, depth, "high", moves[0])
                 if (moves[0].flags.indexOf("c") < 0) this.updateHistory(moves[0], depth)
                 return best
             }
