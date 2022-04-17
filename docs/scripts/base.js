@@ -2,6 +2,6 @@ var boardObj
 
 function loadEls() {
     boardObj = new CB(document.getElementById("board"), {
-        // fen: "1k1r1bnr/ppp2ppp/2n5/3pp1q1/1P1P2b1/2PBP1P1/P3NP1P/RNBQK2R w KQ - 0 1"
+        fen: "2Rk3r/3nbpp1/p2p3p/8/8/2Q1P3/1P3PPP/1NB1KBNR b K - 0 1"
     })
 }
