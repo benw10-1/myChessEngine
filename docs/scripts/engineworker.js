@@ -275,7 +275,7 @@ class Engine {
                 let [result, last] = this.pvRoot(ply, lastSearch)
                 let end = Date.now() - strt
                 console.log("ply " + ply + " in " + (end/1000) + " seconds")
-                // if (this.timeup()) break
+                if (this.timeup()) break
                 if (result) bestplys.push(result)
                 if (Date.now() >= (this.stoptime - end)) break
                 lastSearch = last
@@ -359,6 +359,7 @@ class Engine {
         return best
     }
     pvRoot(ply, lastSearch) {
+        if (this.game.game_over()) return [0, 0]
         let openings = this.getOpenings()
         if (openings) {
             if (ply >= 4) return [false, false]
