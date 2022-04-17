@@ -275,7 +275,7 @@ class Engine {
                 let [result, last] = this.pvRoot(ply, lastSearch)
                 let end = Date.now() - strt
                 console.log("ply " + ply + " in " + (end/1000) + " seconds")
-                if (this.timeup()) break
+                // if (this.timeup()) break
                 if (result) bestplys.push(result)
                 if (Date.now() >= (this.stoptime - end)) break
                 lastSearch = last
@@ -455,10 +455,8 @@ class Engine {
                 best = val
             }
         }
-        if (chosen) {
-            this.transposition[h] = this.TTentry(best, depth, "hash", chosen)
-            // if (!chosen.captured) this.updateHistory(chosen, depth)
-        }
+        if (chosen) this.transposition[h] = chosen//this.TTentry(best, depth, "hash", chosen)
+        else this.transposition[h] = moves[0]//.TTentry(best, depth, "hash", moves[0])
         if (rootMoves) {
             if (!chosen) {
                 let best = -Infinity
