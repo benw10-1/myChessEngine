@@ -254,7 +254,26 @@ class Engine {
 
             this.evaluated = 0
             this.q = 0
+            // console.log(this.eval())
+            // let squares = this.game.board()
+            // let total = 0, i = 0
+            // for (const row of squares) {
+            //     for (const item of row) {
+            //         if (!item) {
+            //             i++
+            //             continue
+            //         }
 
+            //         if (this.endgame && item.type === "k") {
+            //             total += keys["e" + item.color + item.type + "pref"][i]
+            //         }
+            //         else total += keys[item.color + item.type + "pref"][i]
+            //         total += keys.indices[item.color + item.type]
+            //         i++
+            //     }
+            // }
+            // console.log(total * ((this.game.turn() === BLACK) ? -1 : 1))
+            // return 
             let maxPly = 8, bestplys = [], lastSearch = {}
             let whitemat = 0, blackmat = 0
             for (const row of this.game.board()) {
